@@ -74,8 +74,9 @@ function loadRecaptcha(){
     if(window.grecaptcha?.enterprise){res();return;}
     const existing=document.querySelector('script[data-sgp-recaptcha-enterprise]');
     if(existing){
-      existing.addEventListener("load",res,{once:true});
-      existing.addEventListener("error",res,{once:true});
+      if(window.grecaptcha?.enterprise){res();return;}
+      existing.addEventListener("load",()=>res(),{once:true});
+      existing.addEventListener("error",()=>res(),{once:true});
       return;
     }
     const s=document.createElement("script");
@@ -844,8 +845,10 @@ export default function DocumentUpload(){
   const captchaContainer = React.useRef(null);
   const captchaWidgetId  = React.useRef(null);
 
-  // Load reCAPTCHA script once on mount
+  // Load reCAPTCHA script and render widget when step 1 is active without session token
   React.useEffect(()=>{
+    if (sessionToken) return;
+
     if (SHOULD_USE_MOCK_CAPTCHA) {
       setCaptchaToken(buildLocalMockCaptchaToken());
       setCaptchaReady(true);
@@ -853,20 +856,35 @@ export default function DocumentUpload(){
       return;
     }
 
+    let isMounted = true;
+
     loadRecaptcha().then(()=>{
-      if (!window.grecaptcha?.enterprise || !captchaContainer.current || !RECAPTCHA_ENTERPRISE_SITE_KEY) return;
+      if (!isMounted || !window.grecaptcha?.enterprise || !RECAPTCHA_ENTERPRISE_SITE_KEY) return;
       window.grecaptcha.enterprise.ready(()=>{
-        if (captchaWidgetId.current !== null || !captchaContainer.current || typeof window.grecaptcha.enterprise.render !== "function") return;
-        captchaWidgetId.current = window.grecaptcha.enterprise.render(captchaContainer.current, {
-          sitekey: RECAPTCHA_ENTERPRISE_SITE_KEY,
-          callback: token => { setCaptchaToken(token); setCaptchaError(""); },
-          "expired-callback": () => { setCaptchaToken(null); setSessionToken(null); setCaptchaError("CAPTCHA expired. Please verify again."); },
-          "error-callback": () => { setCaptchaToken(null); setCaptchaError("CAPTCHA verification failed."); },
-        });
-        setCaptchaReady(true);
+        if (!isMounted || !captchaContainer.current || typeof window.grecaptcha.enterprise.render !== "function") return;
+        if (captchaWidgetId.current !== null) return;
+        try {
+          captchaWidgetId.current = window.grecaptcha.enterprise.render(captchaContainer.current, {
+            sitekey: RECAPTCHA_ENTERPRISE_SITE_KEY,
+            callback: token => { if (isMounted) { setCaptchaToken(token); setCaptchaError(""); } },
+            "expired-callback": () => { if (isMounted) { setCaptchaToken(null); setSessionToken(null); setCaptchaError("CAPTCHA expired. Please verify again."); } },
+            "error-callback": () => { if (isMounted) { setCaptchaToken(null); setCaptchaError("CAPTCHA verification failed."); } },
+          });
+          if (isMounted) setCaptchaReady(true);
+        } catch (e) {
+          // Ignore render race condition
+        }
       });
     });
-  },[]);
+
+    return () => {
+      isMounted = false;
+      if (captchaWidgetId.current !== null) {
+        try { window.grecaptcha?.enterprise?.reset(captchaWidgetId.current); } catch {}
+        captchaWidgetId.current = null;
+      }
+    };
+  },[step, sessionToken]);
 
   const handleCaptchaAndSession = async()=>{
     if(!captchaReady || !captchaToken){ setCaptchaError("Complete the CAPTCHA verification first."); return; }
@@ -884,7 +902,10 @@ export default function DocumentUpload(){
     setSessionToken(null);
     setCaptchaToken(null);
     _sessionCache = null;
-    if (captchaWidgetId.current !== null) window.grecaptcha?.enterprise?.reset(captchaWidgetId.current);
+    if (captchaWidgetId.current !== null) {
+      try { window.grecaptcha?.enterprise?.reset(captchaWidgetId.current); } catch {}
+      captchaWidgetId.current = null;
+    }
   };
 
   const nav=(path)=>{ setIsExiting(true); setTimeout(()=>navigate(path),600); };

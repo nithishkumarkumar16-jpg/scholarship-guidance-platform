@@ -14,8 +14,9 @@ function loadRecaptcha() {
     if (window.grecaptcha?.enterprise) { res(); return; }
     const existing = document.querySelector('script[data-sgp-recaptcha-enterprise]');
     if (existing) {
-      existing.addEventListener("load", res, { once: true });
-      existing.addEventListener("error", res, { once: true });
+      if (window.grecaptcha?.enterprise) { res(); return; }
+      existing.addEventListener("load", () => res(), { once: true });
+      existing.addEventListener("error", () => res(), { once: true });
       return;
     }
     const s = document.createElement("script");

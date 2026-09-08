@@ -344,8 +344,8 @@ function Dashboard() {
                   Smart Pre-Submission <span className="accent">Scholarship Verification</span>
                 </h1>
                 <p className="portal-desc" style={{ fontSize: "14.5px", color: "#5D4A26", lineHeight: 1.6, maxWidth: "680px" }}>
-                  Over 80% of scholarship rejections happen due to simple name mismatches or inactive DBT bank seeding. SGP
-                  helps you verify everything before official portal submission.
+                  Avoid scholarship rejection.<br />
+                  Check your name and DBT bank seeding before submission.
                 </p>
               </div>
 

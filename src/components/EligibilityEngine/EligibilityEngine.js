@@ -2,121 +2,21 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import LanguageSelector from "../LanguageSelector/LanguageSelector";
 import "./EligibilityEngine.css";
+import { SCHOLARSHIP_SCHEMES, matchScholarshipSchemes } from "../../data/scholarshipSchemes";
 
-// ============================================
-// GOVERNMENT SCHOLARSHIP DATA — NSP / Ministry
-// ============================================
-const SCHEMES = [
-  {
-    id: "pms-sc",
-    name: "Post-Matric Scholarship for SC Students (PMS-SC)",
-    provider: "Ministry of Social Justice & Empowerment",
-    portal: "NSP", communities: ["SC"], maxIncome: 250000,
-    courses: ["ug", "pg", "diploma", "iti", "phd"],
-    amountType: "range", amountMin: 4200, amountMax: 22300,
-    amountNote: "₹4,200 – ₹22,300 / year  (maintenance + tuition + fees)",
-    icon: "🎓", color: "#2563eb", status: "Open",
-    applyUrl: "https://scholarships.gov.in",
-  },
-  {
-    id: "pms-st",
-    name: "Post-Matric Scholarship for ST Students (PMS-ST)",
-    provider: "Ministry of Tribal Affairs",
-    portal: "NSP", communities: ["ST"], maxIncome: 250000,
-    courses: ["ug", "pg", "diploma", "iti", "phd"],
-    amountType: "range", amountMin: 4200, amountMax: 22300,
-    amountNote: "₹4,200 – ₹22,300 / year  (maintenance + tuition + fees)",
-    icon: "🏕️", color: "#059669", status: "Open",
-    applyUrl: "https://scholarships.gov.in",
-  },
-  {
-    id: "pms-obc",
-    name: "Post-Matric Scholarship for OBC Students (PMS-OBC)",
-    provider: "Ministry of Social Justice & Empowerment",
-    portal: "NSP", communities: ["OBC"], maxIncome: 100000,
-    courses: ["ug", "pg", "diploma", "iti"],
-    amountType: "range", amountMin: 4200, amountMax: 12000,
-    amountNote: "₹4,200 – ₹12,000 / year  (maintenance allowance + fees)",
-    icon: "📘", color: "#7c3aed", status: "Open",
-    applyUrl: "https://scholarships.gov.in",
-  },
-  {
-    id: "csss",
-    name: "PM-USP — Central Sector Scheme of Scholarships (CSSS)",
-    provider: "Ministry of Education",
-    portal: "NSP", communities: ["SC","ST","OBC","EBC","BC","MBC","GEN"], maxIncome: 450000,
-    courses: ["ug", "pg"],
-    amountType: "tiered", amountUG: 12000, amountPG: 20000,
-    amountNote: "₹12,000 / year (UG)  |  ₹20,000 / year (PG)",
-    icon: "🏛️", color: "#0891b2", status: "Open",
-    applyUrl: "https://scholarships.gov.in",
-  },
-  {
-    id: "yasasvi",
-    name: "PM-YASASVI — OBC / EBC / DNT Post-Matric",
-    provider: "Ministry of Social Justice & Empowerment",
-    portal: "NSP", communities: ["OBC","EBC","DNC","BC","MBC"], maxIncome: 250000,
-    courses: ["ug", "pg", "diploma"],
-    amountType: "full", amountMin: 75000, amountMax: 200000,
-    amountNote: "Full financial support — tuition + maintenance (top-class colleges)",
-    icon: "🏅", color: "#d97706", status: "Open",
-    applyUrl: "https://scholarships.gov.in",
-  },
-  {
-    id: "minority-pms",
-    name: "Post-Matric Scholarship — Minority Communities",
-    provider: "Ministry of Minority Affairs",
-    portal: "NSP", communities: ["MIN"], maxIncome: 200000,
-    courses: ["ug", "pg", "diploma", "iti", "phd"],
-    amountType: "range", amountMin: 3000, amountMax: 12000,
-    amountNote: "₹3,000 – ₹12,000 / year  (Class 11 to Ph.D.)",
-    icon: "🌙", color: "#db2777", status: "Open",
-    applyUrl: "https://scholarships.gov.in",
-  },
-  {
-    id: "pmss",
-    name: "PM Scholarship — Wards of Armed Forces (PMSS)",
-    provider: "Ministry of Home Affairs / Kendriya Sainik Board",
-    portal: "NSP",
-    communities: ["SC","ST","OBC","EBC","BC","MBC","GEN","MIN","DNC"],
-    maxIncome: 999999999,
-    courses: ["ug", "pg", "diploma"],
-    amountType: "fixed", amountBoys: 24000, amountGirls: 27000,
-    amountNote: "₹2,000 / month (Boys)  |  ₹2,250 / month (Girls)",
-    specialCondition: "armed_forces",
-    icon: "🪖", color: "#65a30d", status: "Open",
-    applyUrl: "https://scholarships.gov.in",
-  },
-  {
-    id: "tn-bc-mbc",
-    name: "Tamil Nadu State Post-Matric Scholarship (BC / MBC / DNC)",
-    provider: "TN BC, MBC & Minorities Welfare Department",
-    portal: "UMIS", communities: ["BC","MBC","DNC"], maxIncome: 200000,
-    courses: ["ug", "pg", "diploma", "iti"],
-    amountType: "range", amountMin: 6000, amountMax: 15000,
-    amountNote: "₹6,000 – ₹15,000 / year  (varies by course & institution)",
-    icon: "🗺️", color: "#9333ea", status: "Open",
-    applyUrl: "https://umis.tn.gov.in",
-  },
-];
-
-const MINORITY_LABELS = ["Muslim","Sikh","Christian","Buddhist","Zoroastrian","Jain"];
+const MINORITY_LABELS = ["Muslim", "Sikh", "Christian", "Buddhist", "Zoroastrian", "Jain"];
 function normalizeCommunity(raw) {
-  const c = raw.toUpperCase().trim();
+  const c = (raw || "").toUpperCase().trim();
   if (MINORITY_LABELS.map(x => x.toUpperCase()).includes(c)) return "MIN";
   return c;
 }
 
 function checkEligibility(form) {
-  const income = parseInt(form.income, 10);
-  const community = normalizeCommunity(form.community);
-  const course = form.course.toLowerCase().trim();
-  const isAF = form.armedForces === "yes";
-  return SCHEMES.filter(s => {
-    if (s.specialCondition === "armed_forces" && !isAF) return false;
-    return s.communities.includes(community) &&
-      !isNaN(income) && income <= s.maxIncome &&
-      s.courses.includes(course);
+  return matchScholarshipSchemes({
+    income: form.income,
+    community: normalizeCommunity(form.community),
+    course: form.course,
+    armedForces: form.armedForces,
   });
 }
 
@@ -150,9 +50,6 @@ const COURSE_OPTIONS = [
 ];
 const YEAR_OPTIONS = ["1st", "2nd", "3rd", "4th"];
 
-// ============================================
-// COMPONENT
-// ============================================
 function EligibilityEngine() {
   const navigate = useNavigate();
   const [isExiting, setIsExiting] = useState(false);
@@ -225,7 +122,7 @@ function EligibilityEngine() {
             <div className="brand-icon">🎯</div>
             <div className="brand-text">
               <h1>Eligibility Engine</h1>
-              <p>Post Matric Scholarship Matching</p>
+              <p>Potentially Matching Scholarship Schemes</p>
             </div>
           </div>
           <div className="header-actions">
@@ -243,8 +140,8 @@ function EligibilityEngine() {
         {step === "form" && (
           <>
             <div className="section-header">
-              <h2>Check Your Eligibility</h2>
-              <p>Enter your details to find matching government scholarship schemes.</p>
+              <h2>Find Matching Scholarships</h2>
+              <p>Enter your details to check potentially matching government scholarship schemes ({SCHOLARSHIP_SCHEMES.length} maintained schemes).</p>
             </div>
 
             {/* ── TOP DISCLAIMER BANNER ── */}
@@ -252,16 +149,15 @@ function EligibilityEngine() {
               <div className="tdb-left">
                 <span className="tdb-warn-icon">⚠️</span>
                 <div>
-                  <p className="tdb-heading">Indicative Tool — Not an Official Portal</p>
+                  <p className="tdb-heading">Indicative Guidance — Pre-Submission Check</p>
                   <p className="tdb-sub">
-                    Hundreds of schemes exist across ministries &amp; states.
-                    This tool shows only <strong>major Post-Matric schemes</strong> —
-                    actual eligibility is confirmed only on <strong>NSP</strong> or <strong>UMIS</strong>.
+                    Matches are indicative and based on entered criteria.
+                    Actual eligibility and award confirmation is determined officially on <strong>National Scholarship Portal (NSP)</strong> or <strong>UMIS</strong>.
                   </p>
                 </div>
               </div>
               <div className="tdb-chips">
-                <span className="tdb-chip chip-orange">📋 Results are estimates</span>
+                <span className="tdb-chip chip-orange">📋 Results are indicative estimates</span>
                 <span className="tdb-chip chip-blue">🌐 NSP — Central schemes</span>
                 <span className="tdb-chip chip-purple">🏛️ UMIS — TN State schemes</span>
               </div>
@@ -332,7 +228,7 @@ function EligibilityEngine() {
               </div>
 
               <button className="btn-massive-primary check-btn" onClick={handleCheck}>
-                🔍 Check Eligibility
+                🔍 Check Potential Eligibility
               </button>
             </div>
           </>
@@ -342,7 +238,7 @@ function EligibilityEngine() {
         {step === "result" && (
           <>
             <div className="section-header">
-              <h2>Your Eligibility Results</h2>
+              <h2>Potentially Matching Scholarships</h2>
               <p>For <strong>{form.name}</strong> — {form.community} | {form.course.toUpperCase()} | ₹{parseInt(form.income).toLocaleString("en-IN")}</p>
             </div>
 
@@ -350,7 +246,7 @@ function EligibilityEngine() {
             <div className="criteria-section glass-panel">
               <div className="section-title">
                 <span className="section-icon">✅</span>
-                <h3>Verified Information</h3>
+                <h3>Submitted Criteria</h3>
               </div>
               <div className="criteria-grid">
                 {[["NAME",form.name.toUpperCase()],["COMMUNITY",form.community],
@@ -370,16 +266,16 @@ function EligibilityEngine() {
               <div className="match-count-banner">
                 <span className="match-icon">🎯</span>
                 <span>
-                  <strong>{eligible.length} Scheme{eligible.length>1?"s":""} Matched</strong>
-                  {" "}— Based on income &amp; community. Final eligibility confirmed only on NSP / UMIS.
+                  <strong>{eligible.length} Potential Scheme{eligible.length>1?"s":""} Matched</strong>
+                  {" "}— Based on income, community, and academic criteria. Final eligibility must be submitted and confirmed on NSP / UMIS.
                 </span>
               </div>
             ) : (
               <div className="pro-warning-banner glass-panel no-eligibility">
                 <div className="warning-icon-wrapper"><span>⚠️</span></div>
                 <div className="warning-text">
-                  <strong>No Matching Schemes Found</strong>
-                  <p>Your income or community did not match any scheme in our database. Check directly on NSP or UMIS — they have more schemes.</p>
+                  <strong>No Matching Schemes Found in Database</strong>
+                  <p>Your income or community criteria did not match the {SCHOLARSHIP_SCHEMES.length} maintained schemes in our database. Please check the official NSP and UMIS portals directly for additional state or specialized schemes.</p>
                 </div>
               </div>
             )}
@@ -399,12 +295,12 @@ function EligibilityEngine() {
                       </div>
                       <div className="src-badges">
                         <span className="badge-portal" style={{ background: scheme.color + "20", color: scheme.color }}>{scheme.portal}</span>
-                        <span className="badge-status">✅ {scheme.status}</span>
+                        <span className="badge-status">✅ Potential Match</span>
                       </div>
                     </div>
 
                     <div className="src-amount-note" style={{ borderLeftColor: scheme.color }}>
-                      <span className="amt-label">💰 Amount</span>
+                      <span className="amt-label">💰 Estimated Amount</span>
                       <span className="amt-value">{scheme.amountNote}</span>
                     </div>
 
@@ -454,7 +350,7 @@ function EligibilityEngine() {
                         Apply via <strong>{scheme.portal==="NSP"?"scholarships.gov.in":"umis.tn.gov.in"}</strong>
                       </span>
                       <button className="apply-btn" style={{ background: scheme.color }}
-                        onClick={() => window.open(scheme.applyUrl,"_blank","noopener,noreferrer")}>
+                        onClick={() => window.open(scheme.officialUrl,"_blank","noopener,noreferrer")}>
                         Apply on {scheme.portal} →
                       </button>
                     </div>
@@ -465,7 +361,7 @@ function EligibilityEngine() {
 
             {/* Result page compact reminder */}
             <div className="result-reminder-strip">
-              ⚠️ <strong>Indicative results only.</strong> When you apply on <strong>NSP</strong> or <strong>UMIS</strong>, the portal verifies your documents and shows only schemes you are <em>officially</em> eligible for — which may differ from the above.
+              ⚠️ <strong>Indicative results only.</strong> Official application and document verification must be completed on <strong>NSP</strong> or <strong>UMIS</strong>.
             </div>
 
             <div className="action-buttons">
@@ -480,5 +376,3 @@ function EligibilityEngine() {
 }
 
 export default EligibilityEngine;
-
-

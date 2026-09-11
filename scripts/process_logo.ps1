@@ -1,7 +1,9 @@
+param(
+    [string]$sourcePath = "$PSScriptRoot\..\public\sgp-logo.png"
+)
 Add-Type -AssemblyName System.Drawing
-$sourcePath = "C:\Users\Nithishkumar M\.gemini\antigravity-ide\brain\a5f43bad-3307-4770-97a0-3f91dbbfd73e\.user_uploaded\media_1788625417400.png"
-$publicDir = "D:\SGP_FINAL\sgp_output\public"
-$srcAssetsDir = "D:\SGP_FINAL\sgp_output\src\assets"
+$publicDir = "$PSScriptRoot\..\public"
+$srcAssetsDir = "$PSScriptRoot\..\src\assets"
 
 Copy-Item -Path $sourcePath -Destination "$publicDir\sgp-logo.png" -Force
 Copy-Item -Path $sourcePath -Destination "$publicDir\logo.png" -Force

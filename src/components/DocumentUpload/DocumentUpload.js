@@ -4,6 +4,7 @@ import LanguageSelector from "../LanguageSelector/LanguageSelector";
 import "./DocumentUpload.css";
 import { extractDocumentData } from "../LocalAI/sgpDocAI";
 import { buildCrossDocumentMatrix } from "../../utils/verificationEngine";
+import { SUPPORTED_DOC_TYPES } from "../../utils/documentClassifier";
 
 const I = {
   Shield:    () => <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3L4 7v5c0 5.25 3.5 10.15 8 11.35C16.5 22.15 20 17.25 20 12V7L12 3z"/><polyline points="9 12 11 14 15 10"/></svg>,
@@ -402,12 +403,21 @@ export default function DocumentUpload() {
     const ext = s.data?.extracted || {};
     const slotVal = s.data?.slotValidation || {};
     const quality = s.data?.quality || {};
+    const stateVal = s.data?.state || ext.state || null;
+    const authVal = s.data?.issuingAuthority || ext.issuingAuthority || null;
+    const ocrConfText = s.data?.ocrConfidence !== null && s.data?.ocrConfidence !== undefined
+      ? `${s.data.ocrConfidence}%`
+      : "Not available";
+    const qualityLvl = quality.qualityLevel ? quality.qualityLevel.toUpperCase() : "UNKNOWN";
+    const statusText = s.data?.issues?.length > 0
+      ? "Manual verification recommended"
+      : (s.data?.warnings?.length > 0 ? "Extracted with minor uncertainty" : "Extracted with high confidence");
 
     return (
       <div className={"ex-wrap-r ex-" + cfg.color}>
         <div className="ex-hd-r" onClick={() => toggleOpen(type)}>
           <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <I.Clipboard /> Extracted Details &amp; Quality
+            <I.Clipboard /> Extracted Details &amp; Multi-State Audit
           </span>
           <span>{s.open ? <I.Up /> : <I.Down />}</span>
         </div>
@@ -431,18 +441,58 @@ export default function DocumentUpload() {
               </div>
             )}
 
-            {/* Quality & Confidence Strip */}
-            <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 12px", marginBottom: 10, display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-              <div style={{ fontSize: 11, color: "#475569" }}>
-                Quality: <strong style={{ color: quality.qualityLevel === "good" ? "#16a34a" : quality.qualityLevel === "fair" ? "#ca8a04" : "#dc2626" }}>{quality.qualityLevel ? quality.qualityLevel.toUpperCase() : "GOOD"}</strong>
+            {/* Quality, OCR Confidence & State-Agnostic Strip */}
+            <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", marginBottom: 10, display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 12px", fontSize: 11 }}>
+              <div>
+                <span style={{ color: "#64748b" }}>Document Type: </span>
+                <strong style={{ color: "#0f172a" }}>{s.data?.detectedType ? (SUPPORTED_DOC_TYPES[s.data.detectedType]?.label || s.data.detectedType) : cfg.label}</strong>
               </div>
-              <div style={{ fontSize: 11, color: "#475569" }}>
-                OCR Confidence: <strong>{s.data?.ocrConfidence || 85}%</strong>
+              <div>
+                <span style={{ color: "#64748b" }}>State: </span>
+                <strong style={{ color: stateVal ? "#0369a1" : "#64748b" }}>{stateVal || "State not determined"}</strong>
               </div>
-              <div style={{ fontSize: 11, color: "#475569" }}>
-                Type: <strong>{s.data?.detectedType ? s.data.detectedType.toUpperCase() : "DETECTED"}</strong>
+              <div>
+                <span style={{ color: "#64748b" }}>Authority: </span>
+                <strong style={{ color: authVal ? "#4338ca" : "#64748b" }}>{authVal || "Authority not determined"}</strong>
+              </div>
+              <div>
+                <span style={{ color: "#64748b" }}>Quality: </span>
+                <strong style={{ color: qualityLvl === "GOOD" ? "#16a34a" : qualityLvl === "FAIR" ? "#ca8a04" : qualityLvl === "POOR" ? "#dc2626" : "#64748b" }}>
+                  {qualityLvl}
+                </strong>
+              </div>
+              <div>
+                <span style={{ color: "#64748b" }}>OCR Confidence: </span>
+                <strong style={{ color: "#0f172a" }}>
+                  {ocrConfText}
+                  {s.data?.fieldConfidence ? (
+                    <span style={{ fontWeight: 600, fontSize: 10, color: "#0284c7", marginLeft: 4 }}>
+                      (Field Match: {s.data.fieldConfidence}%)
+                    </span>
+                  ) : null}
+                </strong>
+              </div>
+              <div>
+                <span style={{ color: "#64748b" }}>Status: </span>
+                <strong style={{ color: s.data?.issues?.length > 0 ? "#dc2626" : (s.data?.warnings?.length > 0 ? "#d97706" : "#16a34a") }}>
+                  {statusText}
+                </strong>
               </div>
             </div>
+
+            {/* Quality Explanation */}
+            {quality.qualityDescription && (
+              <div style={{ fontSize: "10.5px", color: "#64748b", marginBottom: 8, fontStyle: "italic" }}>
+                ℹ️ {quality.qualityDescription}
+              </div>
+            )}
+
+            {/* Warnings and Issues */}
+            {s.data?.warnings?.length > 0 && (
+              <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 6, padding: "6px 10px", marginBottom: 8, fontSize: 11, color: "#92400e" }}>
+                {s.data.warnings.map((w, wi) => <div key={wi}>⚠️ {w}</div>)}
+              </div>
+            )}
 
             {/* Income Freshness Banner */}
             {type === "income" && ext.freshness && (
@@ -471,10 +521,18 @@ export default function DocumentUpload() {
             {fields.map(key => {
               const val = ext[key];
               if (!val) return null;
+              const fieldScore = s.data?.fieldConfidences?.[key];
               return (
                 <div key={key} className="ex-row-r">
                   <span className="ex-k-r">{FL[key] || key}</span>
-                  <span className="ex-v-r">{String(val)}</span>
+                  <span className="ex-v-r" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                    <span>{String(val)}</span>
+                    {typeof fieldScore === "number" && fieldScore > 0 ? (
+                      <span style={{ fontSize: 9.5, padding: "2px 6px", borderRadius: 4, background: fieldScore >= 0.85 ? "#dcfce7" : "#fef9c3", color: fieldScore >= 0.85 ? "#166534" : "#854d0e", fontWeight: 700 }}>
+                        {Math.round(fieldScore * 100)}% match
+                      </span>
+                    ) : null}
+                  </span>
                 </div>
               );
             })}
@@ -646,7 +704,7 @@ export default function DocumentUpload() {
               <div className="nsp-fg2">
                 <div className="nsp-f" style={{ gridColumn: "1/-1" }}>
                   <label style={labelStyle}>Applicant Full Name (as per Aadhaar) <span style={reqStyle}>*</span></label>
-                  <input value={aadharName} onChange={e => setAadharName(e.target.value)} placeholder="e.g. NITHISHKUMAR M" style={inputStyle(detailsErrs.aadharName)} />
+                  <input value={aadharName} onChange={e => setAadharName(e.target.value)} placeholder="e.g. SAMPLE STUDENT" style={inputStyle(detailsErrs.aadharName)} />
                   <span style={hintStyle}>Enter name exactly as printed on your Aadhaar card</span>
                 </div>
                 <div className="nsp-f">
@@ -680,7 +738,7 @@ export default function DocumentUpload() {
               <div className="nsp-fg2">
                 <div className="nsp-f" style={{ gridColumn: "1/-1" }}>
                   <label style={labelStyle}>Account Holder Name (as on Passbook) <span style={reqStyle}>*</span></label>
-                  <input value={bankHolder} onChange={e => setBankHolder(e.target.value)} placeholder="e.g. NITHISHKUMAR M" style={inputStyle(detailsErrs.bankHolder)} />
+                  <input value={bankHolder} onChange={e => setBankHolder(e.target.value)} placeholder="e.g. SAMPLE STUDENT" style={inputStyle(detailsErrs.bankHolder)} />
                 </div>
                 <div className="nsp-f">
                   <label style={labelStyle}>Account Type <span style={reqStyle}>*</span></label>

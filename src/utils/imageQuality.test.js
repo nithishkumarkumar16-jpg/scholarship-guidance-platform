@@ -1,4 +1,9 @@
-import { analyzeImageQuality, calculateLaplacianVariance, getLuminance } from "./imageQuality";
+import {
+  analyzeImageQuality,
+  analyzeCanvasQuality,
+  calculateLaplacianVariance,
+  getLuminance,
+} from "./imageQuality";
 
 describe("imageQuality", () => {
   test("computes correct luminance from RGB values", () => {
@@ -49,8 +54,38 @@ describe("imageQuality", () => {
       data[i + 3] = 255;
     }
 
-    const result = analyzeImageQuality({ width, height, data });
+    const result = analyzeImageQuality({ width, height, data }, 200, 200);
     expect(result.qualityLevel).toBe("poor");
     expect(result.issues.some(issue => issue.includes("dark") || issue.includes("resolution"))).toBe(true);
+  });
+
+  test("correctly scores high-resolution, clear, sharp document as good", () => {
+    const width = 800;
+    const height = 1000;
+    const data = new Uint8ClampedArray(width * height * 4);
+
+    // High quality document with white background and text patterns
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const idx = (y * width + x) * 4;
+        const isText = (y % 30 < 5) && (x % 10 < 5);
+        const val = isText ? 20 : 240;
+        data[idx] = val;
+        data[idx + 1] = val;
+        data[idx + 2] = val;
+        data[idx + 3] = 255;
+      }
+    }
+
+    // Original dimension is 1600x2000
+    const result = analyzeImageQuality({ width, height, data }, 1600, 2000);
+    expect(result.qualityLevel).toBe("good");
+    expect(result.isReadable).toBe(true);
+  });
+
+  test("returns unknown level on invalid or null canvas instead of defaulting to fair", () => {
+    const result = analyzeCanvasQuality(null);
+    expect(result.qualityLevel).toBe("unknown");
+    expect(result.issues.length).toBeGreaterThan(0);
   });
 });

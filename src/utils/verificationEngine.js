@@ -67,7 +67,7 @@ export function compareNames(rawA, rawB, isStrict = false) {
     return { status: "EXACT_MATCH", score: 1.0, explanation: "Exact character match." };
   }
 
-  // LEVEL 2 & 3: Token-Order Variation (e.g. "Nithishkumar M" vs "M Nithishkumar")
+  // LEVEL 2 & 3: Token-Order Variation (e.g. "Sample Student T" vs "T Sample Student")
   const sortedA = tokenSort(cleanA);
   const sortedB = tokenSort(cleanB);
   if (sortedA === sortedB) {

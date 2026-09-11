@@ -10,7 +10,8 @@
  * - bankpass: Bank Passbook
  * - unknown: Unknown / Insufficient Signals
  * 
- * Uses multi-signal weighted scoring with confidence calculation and signal breakdown.
+ * State-Agnostic: Decouples document type from issuing state and issuing authority.
+ * Never defaults to any specific state unless genuine evidence is present in the text.
  */
 
 export const SUPPORTED_DOC_TYPES = {
@@ -49,8 +50,8 @@ const CLASSIFICATION_RULES = {
     { pattern: /scheduled\s+caste|scheduled\s+tribe|backward\s+class|most\s+backward\s+class|denotified\s+community/i, weight: 7, label: "Recognized caste category mention" },
     { pattern: /\b(sc|st|mbc|dnc|obc|bc)\b/i, weight: 4, label: "Community abbreviation" },
     { pattern: /belongs\s+to.*community|certified\s+that.*belongs/is, weight: 6, label: "Community certification clause" },
-    { pattern: /tahsildar|revenue\s+divisional\s+officer|\brdo\b|zonal\s+deputy\s+tahsildar/i, weight: 3, label: "Revenue issuing authority" },
-    { pattern: /\btaluk\b|\bdistrict\b|வட்டம்|மாவட்டம்/i, weight: 2, label: "Taluk/District administration fields" },
+    { pattern: /tahsildar|revenue\s+divisional\s+officer|\brdo\b|zonal\s+deputy\s+tahsildar|talati/i, weight: 3, label: "Revenue issuing authority" },
+    { pattern: /\btaluk\b|\bdistrict\b|வட்டம்|மாவட்டம்|\btaluka\b/i, weight: 2, label: "Taluk/District administration fields" },
     { pattern: /certificate\s*(?:no|number)|cert\s*no|சான்றிதழ்\s*எண்/i, weight: 3, label: "Certificate registration number" },
   ],
 
@@ -59,9 +60,9 @@ const CLASSIFICATION_RULES = {
     { pattern: /annual\s+income|family\s+income|total\s+annual\s+income|yearly\s+income|குடும்ப\s+ஆண்டு\s+வருமானம்/i, weight: 7, label: "Annual/Family income statement" },
     { pattern: /(?:rupees|rs\.?|₹|ரூ\.?)\s*[\d,]+(?:\s*(?:per\s+annum|\/annum|\/year|only))?/i, weight: 5, label: "Income amount notation" },
     { pattern: /source\s+of\s+income|wages|salary|business|agriculture|rental/i, weight: 5, label: "Income source breakdown table" },
-    { pattern: /this\s+is\s+to\s+certify\s+that.*(?:income|family)/is, weight: 5, label: "Income certification clause" },
-    { pattern: /certificate\s+validity\s+period|validity\s+period|செல்லுபடியாகும்\s+காலம்/i, weight: 5, label: "Income validity period clause" },
-    { pattern: /tahsildar|revenue\s+divisional\s+officer|\brdo\b|zonal\s+deputy\s+tahsildar/i, weight: 3, label: "Revenue issuing authority" },
+    { pattern: /this\s+is\s+(?:to\s+)?certify\s+that.*(?:income|family)/is, weight: 5, label: "Income certification clause" },
+    { pattern: /certificate\s+validity\s+period|validity\s+period|செல்லுபடியாகும்\s+காலம்|valid\s+for\s+(?:three|\d+)\s+years/i, weight: 5, label: "Income validity period clause" },
+    { pattern: /tahsildar|revenue\s+divisional\s+officer|\brdo\b|zonal\s+deputy\s+tahsildar|talati\s+cum\s+mantri/i, weight: 3, label: "Revenue issuing authority" },
   ],
 
   aadhaar: [
@@ -79,19 +80,92 @@ const CLASSIFICATION_RULES = {
   ],
 };
 
+const STATE_PATTERNS = [
+  { name: "Gujarat", patterns: [/gujarat/i, /devbhumi\s+dwarka/i, /talati\s+cum\s+mantri/i, /gram\s+panchayat/i, /jam\s+khambhali[y|a]/i] },
+  { name: "Tamil Nadu", patterns: [/tamil\s*nadu/i, /தமிழ்நாடு/i, /chennai/i, /coimbatore/i, /madurai/i, /salem/i, /thiruchirappalli|trichy/i, /thottiam/i, /வட்டம்|மாவட்டம்/i, /வட்டாட்சியர்/i] },
+  { name: "Kerala", patterns: [/kerala/i, /thiruvananthapuram/i, /kochi/i, /kozhikode/i, /village\s+officer/i] },
+  { name: "Karnataka", patterns: [/karnataka/i, /bengaluru|bangalore/i, /mysuru|mysore/i, /nadakacheri/i, /seva\s+sindhu/i] },
+  { name: "Maharashtra", patterns: [/maharashtra/i, /mumbai/i, /pune/i, /nagpur/i, /mahaonline/i, /aaple\s+sarkar/i] },
+  { name: "Andhra Pradesh", patterns: [/andhra\s+pradesh/i, /visakhapatnam/i, /vijayawada/i, /guntur/i] },
+  { name: "Telangana", patterns: [/telangana/i, /hyderabad/i, /warangal/i, /meeseva/i] },
+  { name: "Uttar Pradesh", patterns: [/uttar\s+pradesh/i, /lucknow/i, /kanpur/i, /varanasi/i, /edistrict\.up/i] },
+  { name: "Rajasthan", patterns: [/rajasthan/i, /jaipur/i, /jodhpur/i, /udaipur/i] },
+  { name: "West Bengal", patterns: [/west\s+bengal/i, /kolkata/i, /banglarbhumi/i] },
+  { name: "Odisha", patterns: [/odisha|orissa/i, /bhubaneswar/i, /cuttack/i] },
+  { name: "Punjab", patterns: [/punjab/i, /chandigarh/i, /amritsar/i, /ludhiana/i] },
+  { name: "Bihar", patterns: [/bihar/i, /patna/i, /gaya/i] },
+  { name: "Madhya Pradesh", patterns: [/madhya\s+pradesh/i, /bhopal/i, /indore/i] },
+  { name: "Haryana", patterns: [/haryana/i, /gurugram|gurgaon/i, /faridabad/i] },
+  { name: "Delhi", patterns: [/delhi|nct\s+of\s+delhi/i] },
+  { name: "Assam", patterns: [/assam/i, /guwahati/i] },
+];
+
+const AUTHORITY_PATTERNS = [
+  { name: "Talati Cum Mantri", pattern: /talati\s+cum\s+mantri|talati-cum-mantri|talati/i },
+  { name: "Zonal Deputy Tahsildar", pattern: /zonal\s+deputy\s+tahsildar/i },
+  { name: "Headquarters Deputy Tahsildar", pattern: /headquarters\s+deputy\s+tahsildar/i },
+  { name: "Tahsildar", pattern: /tahsildar|tehsildar|வட்டாட்சியர்/i },
+  { name: "Revenue Divisional Officer", pattern: /revenue\s+divisional\s+officer|\brdo\b/i },
+  { name: "Village Officer", pattern: /village\s+officer|village\s+administrative\s+officer|\bvao\b/i },
+  { name: "District Collector / Magistrate", pattern: /district\s+collector|district\s+magistrate|\bdc\b|\bdm\b/i },
+  { name: "Gram Panchayat", pattern: /gram\s+panchayat|grama\s+panchayat/i },
+  { name: "Revenue Department", pattern: /revenue\s+department|revenue\s+administration/i },
+];
+
 /**
- * Detects document type from extracted text using weighted multi-signal scoring.
+ * Detects issuing state from document text without bias or hardcoded defaults.
+ * 
+ * @param {string} text 
+ * @returns {Object} { state: string|null, stateConfidence: number }
+ */
+export function detectState(text) {
+  const clean = String(text || "");
+  for (const st of STATE_PATTERNS) {
+    const matchCount = st.patterns.filter(p => p.test(clean)).length;
+    if (matchCount > 0) {
+      const stateConfidence = Math.min(98, 70 + (matchCount * 14));
+      return { state: st.name, stateConfidence };
+    }
+  }
+  return { state: null, stateConfidence: 0 };
+}
+
+/**
+ * Detects issuing authority from document text without bias.
+ * 
+ * @param {string} text 
+ * @returns {Object} { issuingAuthority: string|null, authorityConfidence: number }
+ */
+export function detectIssuingAuthority(text) {
+  const clean = String(text || "");
+  for (const auth of AUTHORITY_PATTERNS) {
+    if (auth.pattern.test(clean)) {
+      return { issuingAuthority: auth.name, authorityConfidence: 90 };
+    }
+  }
+  return { issuingAuthority: null, authorityConfidence: 0 };
+}
+
+/**
+ * Detects document type, state, and authority from extracted text using weighted multi-signal scoring.
  * 
  * @param {string} text Raw OCR text
  * @param {Object} metadata Optional file metadata (name, mime)
- * @returns {Object} { type, confidence, reasons, warnings, allScores, isConfident }
+ * @returns {Object} { type, confidence, state, stateConfidence, issuingAuthority, authorityConfidence, reasons, warnings, allScores, isConfident }
  */
 export function detectDocumentType(text, metadata = {}) {
   const clean = String(text || "").replace(/\s+/g, " ").trim();
+  const stateInfo = detectState(clean);
+  const authorityInfo = detectIssuingAuthority(clean);
+
   if (!clean || clean.length < 15) {
     return {
       type: "unknown",
       confidence: 0,
+      state: stateInfo.state,
+      stateConfidence: stateInfo.stateConfidence,
+      issuingAuthority: authorityInfo.issuingAuthority,
+      authorityConfidence: authorityInfo.authorityConfidence,
       reasons: ["Insufficient text content to identify document."],
       warnings: ["Image text is too short or unreadable."],
       allScores: {},
@@ -139,6 +213,13 @@ export function detectDocumentType(text, metadata = {}) {
     return {
       type: "unknown",
       confidence: Math.round(topScore * 10),
+      state: stateInfo.state,
+      issuingState: stateInfo.state,
+      detectedState: stateInfo.state,
+      stateConfidence: stateInfo.stateConfidence,
+      issuingAuthority: authorityInfo.issuingAuthority,
+      detectedAuthority: authorityInfo.issuingAuthority,
+      authorityConfidence: authorityInfo.authorityConfidence,
       reasons: ["No strong matching document patterns found."],
       warnings: ["Text lacks specific markers for marksheets, community, or income certificates."],
       allScores: scores,
@@ -164,6 +245,13 @@ export function detectDocumentType(text, metadata = {}) {
   return {
     type: topType,
     confidence,
+    state: stateInfo.state,
+    issuingState: stateInfo.state,
+    detectedState: stateInfo.state,
+    stateConfidence: stateInfo.stateConfidence,
+    issuingAuthority: authorityInfo.issuingAuthority,
+    detectedAuthority: authorityInfo.issuingAuthority,
+    authorityConfidence: authorityInfo.authorityConfidence,
     reasons,
     warnings,
     allScores: scores,
@@ -215,3 +303,4 @@ export function validateDocumentSlot(slot, detection) {
     detectedLabel,
   };
 }
+

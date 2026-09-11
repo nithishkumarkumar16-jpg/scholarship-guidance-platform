@@ -19,9 +19,9 @@ export function fitOCRCanvas(width, height) {
   const maxEdge = Math.max(width, height);
   let scale = 1;
 
-  if (maxEdge < 1800) {
-    // Upscale phone camera photos/scans to ~2000px on the long edge for crisp character edges in Tesseract
-    scale = Math.min(2.5, 2000 / maxEdge);
+  if (maxEdge < 2200) {
+    // Upscale phone camera photos/scans to ~2400px on the long edge for crisp character edges in Tesseract (300 DPI equivalent)
+    scale = Math.min(2.5, 2400 / maxEdge);
   } else if (maxEdge > OCR_MAX_EDGE) {
     scale = OCR_MAX_EDGE / maxEdge;
   }
@@ -64,13 +64,56 @@ function applyConvolution3x3(input, output, width, height, kernel) {
 }
 
 /**
- * Preprocesses an image or canvas for Tesseract.js OCR.
+ * Calculates optimal Otsu threshold for binarization to strip security watermarks and guilloche patterns.
+ */
+export function computeOtsuThreshold(grayscale, totalPixels) {
+  const hist = new Int32Array(256);
+  for (let i = 0; i < totalPixels; i++) {
+    hist[grayscale[i]]++;
+  }
+
+  let sum = 0;
+  for (let t = 0; t < 256; t++) sum += t * hist[t];
+
+  let sumB = 0;
+  let wB = 0;
+  let wF = 0;
+  let varMax = 0;
+  let threshold = 128;
+
+  for (let t = 0; t < 256; t++) {
+    wB += hist[t];
+    if (wB === 0) continue;
+    wF = totalPixels - wB;
+    if (wF === 0) break;
+
+    sumB += t * hist[t];
+    const mB = sumB / wB;
+    const mF = (sum - sumB) / wF;
+
+    const betweenVar = wB * wF * (mB - mF) * (mB - mF);
+    if (betweenVar > varMax) {
+      varMax = betweenVar;
+      threshold = t;
+    }
+  }
+
+  // Bound threshold within safe document range
+  return Math.max(60, Math.min(200, threshold));
+}
+
+/**
+ * Preprocesses an image or canvas for Tesseract.js OCR with selectable variant:
+ * - "contrast" (Variant A/B: Grayscale + normalized contrast stretch)
+ * - "sharpened" (Variant C: Grayscale + unsharp mask filter)
+ * - "binarized" (Variant D: Grayscale + Otsu thresholding for background pattern removal)
  * 
  * @param {HTMLCanvasElement|ImageBitmap} source
- * @param {Object} qualityAssessment Output from analyzeImageQuality
+ * @param {Object} [qualityAssessment] Output from analyzeImageQuality
+ * @param {string} [variant="contrast"] Preprocessing variant
  * @returns {HTMLCanvasElement} Preprocessed canvas ready for OCR
  */
-export function preprocessCanvasForOCR(source, qualityAssessment = null) {
+export function preprocessCanvasForOCR(source, qualityAssessment = null, variant = "contrast") {
   const srcWidth = source.width;
   const srcHeight = source.height;
   const size = fitOCRCanvas(srcWidth, srcHeight);
@@ -86,15 +129,20 @@ export function preprocessCanvasForOCR(source, qualityAssessment = null) {
   const data = imgData.data;
   const totalPixels = size.width * size.height;
 
-  // Decide strategy based on quality assessment
+  // If variant is "original", return clean scaled canvas without grayscale/contrast modifications
+  if (variant === "original") {
+    return canvas;
+  }
+
+  // Quality metrics assessment
   const isBlurry = qualityAssessment && qualityAssessment.sharpnessScore < 60;
   const isDark = qualityAssessment && qualityAssessment.brightnessScore < 60;
   const isWashedOut = qualityAssessment && qualityAssessment.avgBrightness > 220;
   const isLowContrast = qualityAssessment && qualityAssessment.contrastScore < 50;
 
-  // 1. Grayscale + Mild Contrast Stretch (Default Variant A)
+  // 1. Grayscale conversion + contrast stretch
   const grayscale = new Uint8Array(totalPixels);
-  let contrastFactor = 1.18;
+  let contrastFactor = 1.20;
   let brightnessShift = 0;
 
   if (isDark) {
@@ -114,23 +162,33 @@ export function preprocessCanvasForOCR(source, qualityAssessment = null) {
     grayscale[i] = Math.round(adjusted);
   }
 
-  // 2. Apply Sharpening if Blurry (Variant C)
   let finalGray = grayscale;
-  if (isBlurry && size.width >= 100 && size.height >= 100) {
-    const sharpened = new Uint8Array(totalPixels);
-    // Copy edges
-    sharpened.set(grayscale);
-    // Sharpen kernel: center=5, neighbors=-1
-    const sharpenKernel = [
-       0, -0.6,  0,
-      -0.6, 3.4, -0.6,
-       0, -0.6,  0
-    ];
-    applyConvolution3x3(grayscale, sharpened, size.width, size.height, sharpenKernel);
-    finalGray = sharpened;
+
+  // Variant handling
+  if (variant === "binarized") {
+    // PASS D: High-contrast binarization via Otsu's thresholding
+    const otsuThresh = computeOtsuThreshold(grayscale, totalPixels);
+    const binarized = new Uint8Array(totalPixels);
+    for (let i = 0; i < totalPixels; i++) {
+      binarized[i] = grayscale[i] < otsuThresh ? 0 : 255;
+    }
+    finalGray = binarized;
+  } else if (variant === "sharpened" || isBlurry) {
+    // PASS C: 3x3 unsharp mask sharpening
+    if (size.width >= 100 && size.height >= 100) {
+      const sharpened = new Uint8Array(totalPixels);
+      sharpened.set(grayscale);
+      const sharpenKernel = [
+         0, -0.6,  0,
+        -0.6, 3.4, -0.6,
+         0, -0.6,  0
+      ];
+      applyConvolution3x3(grayscale, sharpened, size.width, size.height, sharpenKernel);
+      finalGray = sharpened;
+    }
   }
 
-  // 3. Write back to ImageData as monochrome RGB
+  // Write back to ImageData as monochrome RGB
   for (let i = 0; i < totalPixels; i++) {
     const idx = i * 4;
     const val = finalGray[i];
@@ -143,3 +201,44 @@ export function preprocessCanvasForOCR(source, qualityAssessment = null) {
   ctx.putImageData(imgData, 0, 0);
   return canvas;
 }
+
+/**
+ * Applies single-pass adaptive enhancement to recover low-quality (FAIR or POOR) scans.
+ * Uses adaptive contrast stretching and subtle sharpening.
+ * 
+ * @param {HTMLCanvasElement|ImageBitmap} source
+ * @param {Object} [qualityAssessment]
+ * @returns {HTMLCanvasElement}
+ */
+export function enhanceLowQualityCanvas(source, qualityAssessment = null) {
+  const isBlurry = qualityAssessment && qualityAssessment.sharpnessScore < 60;
+  const isDark = qualityAssessment && qualityAssessment.brightnessScore < 60;
+  const isLowContrast = qualityAssessment && qualityAssessment.contrastScore < 50;
+
+  if (isBlurry) {
+    return preprocessCanvasForOCR(source, qualityAssessment, "sharpened");
+  } else if (isDark || isLowContrast) {
+    return preprocessCanvasForOCR(source, qualityAssessment, "contrast");
+  }
+  // Default to contrast enhancement for recovery
+  return preprocessCanvasForOCR(source, qualityAssessment, "contrast");
+}
+
+/**
+ * Generates multi-pass canvas variants for high-accuracy marksheet OCR:
+ * 1. original: Original high-resolution render (clean, unprocessed)
+ * 2. contrast / standard: Grayscale + normalized contrast
+ * 3. sharpened: Unsharp mask sharpened
+ * 4. binarized: Clean Otsu thresholded black-and-white
+ */
+export function getPreprocessingVariants(source, qualityAssessment = null) {
+  return {
+    original: preprocessCanvasForOCR(source, qualityAssessment, "original"),
+    standard: preprocessCanvasForOCR(source, qualityAssessment, "contrast"),
+    contrast: preprocessCanvasForOCR(source, qualityAssessment, "contrast"),
+    sharpened: preprocessCanvasForOCR(source, qualityAssessment, "sharpened"),
+    binarized: preprocessCanvasForOCR(source, qualityAssessment, "binarized"),
+  };
+}
+
+

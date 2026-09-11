@@ -167,7 +167,7 @@ function EligibilityEngine() {
 
               <div className="elig-field">
                 <label>Full Name</label>
-                <input type="text" placeholder="e.g. Nithishkumar M" value={form.name}
+                <input type="text" placeholder="e.g. Sample Student" value={form.name}
                   onChange={e => setForm({...form, name:e.target.value})}
                   className={errors.name ? "input-error" : ""} />
                 {errors.name && <span className="err-msg">{errors.name}</span>}

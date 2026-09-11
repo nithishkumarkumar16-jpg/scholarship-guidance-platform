@@ -7,20 +7,20 @@ jest.mock("tesseract.js", () => ({
   createWorker: jest.fn(),
 }));
 
-import { extractMarksheetFields, getPdfWorkerSrc, MAX_PDF_PAGES } from "./sgpDocAI";
+import { extractMarksheetFields, reconcileMarksheetPasses, getPdfWorkerSrc, MAX_PDF_PAGES } from "./sgpDocAI";
 
 describe("extractMarksheetFields", () => {
   test("rejects boilerplate candidate labels and keeps the real student name", () => {
     const text = `
       CLASS X
       NAME OF THE CANDIDATE U
-      RAGUL C
+      SAMPLE STUDENT
       TOTAL MARKS OBTAINED 465 / 500
     `;
 
     const result = extractMarksheetFields(text, "ms10");
 
-    expect(result.name).toBe("Ragul C");
+    expect(result.name).toBe("Sample Student");
     expect(result.name).not.toMatch(/^of\s+the\s+cand/i);
     expect(result.marksScored).toBe("465");
     expect(result.maxMarks).toBe("500");
@@ -46,13 +46,13 @@ describe("extractMarksheetFields", () => {
   test("accepts a valid candidate name when it appears after the label and normalizes uppercase OCR", () => {
     const text = `
       NAME OF THE CANDIDATE:
-      RAGUL C
+      DEMO CANDIDATE
       TOTAL MARKS OBTAINED 465 / 500
     `;
 
     const result = extractMarksheetFields(text, "ms10");
 
-    expect(result.name).toBe("Ragul C");
+    expect(result.name).toBe("Demo Candidate");
     expect(result.name).not.toMatch(/^[A-Z\s]+$/);
   });
 
@@ -92,5 +92,60 @@ describe("pdf security & worker configuration", () => {
 
     expect(workerSrc).toContain("/pdfjs/pdf.worker.min.mjs");
     expect(workerSrc).not.toContain("/pdfs-dist/build/pdf.worker.min.mjs");
+  });
+});
+
+describe("reconcileMarksheetPasses", () => {
+  test("selects higher confidence candidate name from binarized pass when standard pass has low confidence or null", () => {
+    const pass1 = {
+      name: null,
+      marksScored: "499",
+      maxMarks: null,
+      percentage: null,
+      grade: null,
+      year: "2024",
+      school: "SAMPLE MATRIC HR SEC SCHOOL",
+      fieldConfidence: { name: 0, marks: 0.90, school: 0.85 },
+    };
+
+    const pass2 = {
+      name: "Sample Student",
+      marksScored: "499",
+      maxMarks: null,
+      percentage: null,
+      grade: null,
+      year: "2024",
+      school: "SAMPLE MATRIC HR SEC SCHOOL",
+      fieldConfidence: { name: 0.95, marks: 0.90, school: 0.90 },
+    };
+
+    const reconciled = reconcileMarksheetPasses(pass1, pass2);
+    expect(reconciled.name).toBe("Sample Student");
+    expect(reconciled.marksScored).toBe("499");
+    expect(reconciled.fieldConfidence.name).toBe(0.95);
+  });
+
+  test("preserves pass1 fields if pass2 has no additional or better candidates", () => {
+    const pass1 = {
+      name: "Sample Student",
+      marksScored: "499",
+      maxMarks: null,
+      percentage: null,
+      grade: null,
+      year: "2024",
+      school: "SAMPLE MATRIC HR SEC SCHOOL",
+      fieldConfidence: { name: 0.95, marks: 0.90, school: 0.90 },
+    };
+
+    const pass2 = {
+      name: null,
+      marksScored: null,
+      fieldConfidence: { name: 0, marks: 0 },
+    };
+
+    const reconciled = reconcileMarksheetPasses(pass1, pass2);
+    expect(reconciled.name).toBe("Sample Student");
+    expect(reconciled.marksScored).toBe("499");
+    expect(reconciled.fieldConfidence.name).toBe(0.95);
   });
 });

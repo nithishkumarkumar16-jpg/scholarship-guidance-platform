@@ -49,8 +49,8 @@ export function normalizeName(name) {
 
 /**
  * Returns sorted string of name tokens for word-order invariant comparison.
- * e.g. "Nithish Kumar" -> "kumar nithish"
- *      "Kumar Nithish" -> "kumar nithish"
+ * e.g. "Test Student" -> "student test"
+ *      "Student Test" -> "student test"
  */
 export function tokenSort(name) {
   const clean = normalizeName(name).toLowerCase();

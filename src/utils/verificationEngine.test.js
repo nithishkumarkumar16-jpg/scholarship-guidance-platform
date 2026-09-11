@@ -11,41 +11,41 @@ import {
 describe("verificationEngine", () => {
   describe("Name Comparison", () => {
     test("identifies exact name matches", () => {
-      const res = compareNames("Nithishkumar M", "Nithishkumar M", true);
+      const res = compareNames("SAMPLE STUDENT", "SAMPLE STUDENT", true);
       expect(res.status).toBe("EXACT_MATCH");
       expect(res.score).toBe(1.0);
     });
 
     test("identifies token-order variations (Surname first vs last)", () => {
-      const res = compareNames("Nithishkumar M", "M Nithishkumar", true);
+      const res = compareNames("STUDENT SAMPLE", "SAMPLE STUDENT", true);
       expect(res.status).toBe("EXACT_MATCH");
     });
 
     test("strips honorifics and matches clean name", () => {
-      const res = compareNames("Thiru Nithishkumar M", "Nithishkumar M", true);
+      const res = compareNames("Thiru SAMPLE STUDENT", "SAMPLE STUDENT", true);
       expect(res.status).toBe("EXACT_MATCH");
     });
 
     test("handles initial variations appropriately (lenient vs strict)", () => {
-      const lenient = compareNames("Nithish Kumar", "Nithish Kumar M", false);
+      const lenient = compareNames("DEMO CANDIDATE", "DEMO CANDIDATE K", false);
       expect(lenient.status).toBe("EXACT_MATCH");
 
-      const strict = compareNames("Nithish Kumar", "Nithish Kumar M", true);
+      const strict = compareNames("DEMO CANDIDATE", "DEMO CANDIDATE K", true);
       expect(strict.status).toBe("LIKELY_MATCH");
     });
 
     test("detects minor typos / spelling variations", () => {
-      const res = compareNames("Nithish Kumar", "Nithesh Kumar", false);
+      const res = compareNames("DEMO CANDIDATE", "DEMO CANDDATE", false);
       expect(res.status === "LIKELY_MATCH" || res.status === "MINOR_DIFFERENCE").toBe(true);
     });
 
     test("flags clear name mismatches as MISMATCH", () => {
-      const res = compareNames("Nithish Kumar", "Rahul Sharma", true);
+      const res = compareNames("SAMPLE STUDENT", "TEST APPLICANT", true);
       expect(res.status).toBe("MISMATCH");
     });
 
     test("handles missing names gracefully", () => {
-      const res = compareNames("", "Nithish Kumar", true);
+      const res = compareNames("", "SAMPLE STUDENT", true);
       expect(res.status).toBe("MISSING");
     });
   });
@@ -101,14 +101,14 @@ describe("verificationEngine", () => {
   describe("Full Cross-Document Matrix & Consistency Score", () => {
     test("builds full matrix including Income Certificate name and computes consistency score", () => {
       const matrix = buildCrossDocumentMatrix({
-        aadharName: "NITHISHKUMAR M",
+        aadharName: "SAMPLE STUDENT",
         aadharDob: "15-08-2004",
-        bankHolder: "NITHISHKUMAR M",
+        bankHolder: "SAMPLE STUDENT",
         bankAccType: "Single",
-        tenthData: { name: "Nithishkumar M", dob: "15-08-2004" },
-        twelfthData: { name: "Nithishkumar M", dob: null },
-        communityData: { name: "Nithishkumar M", dob: "15-08-2004", communityCategory: "SC" },
-        incomeData: { name: "Nithishkumar M", dob: null, incomeNumber: 200000 },
+        tenthData: { name: "Sample Student", dob: "15-08-2004" },
+        twelfthData: { name: "Sample Student", dob: null },
+        communityData: { name: "Sample Student", dob: "15-08-2004", communityCategory: "SC" },
+        incomeData: { name: "Sample Student", dob: null, incomeNumber: 200000 },
         studentIncome: "200000",
         studentCategory: "SC",
       });
@@ -126,11 +126,11 @@ describe("verificationEngine", () => {
 
     test("detects when a name mismatch exists in the matrix", () => {
       const matrix = buildCrossDocumentMatrix({
-        aadharName: "NITHISHKUMAR M",
+        aadharName: "SAMPLE STUDENT",
         aadharDob: "15-08-2004",
-        bankHolder: "RAHUL SHARMA",
+        bankHolder: "TEST APPLICANT",
         bankAccType: "Single",
-        tenthData: { name: "Nithishkumar M" },
+        tenthData: { name: "Sample Student" },
         studentIncome: "200000",
       });
 

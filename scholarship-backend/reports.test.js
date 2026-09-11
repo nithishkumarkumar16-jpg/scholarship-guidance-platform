@@ -153,8 +153,8 @@ async function runTests() {
   // 9. Missing SMTP Credentials (returns clear user-friendly HTTP 503 instead of fake success)
   await test("Returns clear HTTP 503 when SMTP credentials are unset (not fake success)", async () => {
     const res = await post(`${BASE}/api/send-report`, {
-      name: "Ananya",
-      email: "ananya@example.com",
+      name: "SAMPLE APPLICANT",
+      email: "applicant@example.com",
       issueType: "Document Upload Issue",
       message: "OCR failed on Aadhaar date of birth",
       rating: 4,

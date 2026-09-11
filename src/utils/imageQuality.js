@@ -1,18 +1,18 @@
 /**
- * imageQuality.js — SGP Client-Side Document Quality & Blur Detection
+ * imageQuality.js — SGP Client-Side Document Quality & Blur Detection Engine
  * 
- * Analyzes image bitmap / canvas data for:
- * 1. Low resolution / dimensions
- * 2. Sharpness / Blur via Laplacian variance
- * 3. Brightness (over-exposure / under-exposure)
+ * Evaluates image and rasterized PDF document scan quality:
+ * 1. Resolution / Dimensions (analyzing true source dimensions)
+ * 2. Sharpness / Blur via discrete 2D Laplacian operator variance
+ * 3. Luminance / Brightness (over-exposure / under-exposure)
  * 4. Contrast (pixel luminance standard deviation)
  * 5. Blank / near-empty image detection
  * 
- * 100% browser-compatible, mathematically valid, no fake scores.
+ * 100% browser-compatible, deterministic mathematical metrics, no fabricated scores.
  */
 
 /**
- * Computes luminance from RGB values.
+ * Computes luminance from RGB values using standard photometric weights.
  */
 export function getLuminance(r, g, b) {
   return 0.299 * r + 0.587 * g + 0.114 * b;
@@ -26,7 +26,9 @@ export function getLuminance(r, g, b) {
  * [  0,  1,  0 ]
  * 
  * Higher variance = sharper edges / text.
- * Low variance (< 100) = blurred or out of focus.
+ * Low variance (< 40) = severe blur / out of focus.
+ * Moderate variance (40–100) = mild blur / readable.
+ * High variance (>= 100) = crisp text edges.
  */
 export function calculateLaplacianVariance(grayscale, width, height) {
   if (width < 3 || height < 3) return 0;
@@ -35,7 +37,7 @@ export function calculateLaplacianVariance(grayscale, width, height) {
   let sumSq = 0;
   let count = 0;
 
-  // Step 2 pixels for performance on large images while maintaining statistical accuracy
+  // Step 2 pixels on large buffers for efficient computation while maintaining statistical precision
   const step = width * height > 1_000_000 ? 2 : 1;
 
   for (let y = 1; y < height - 1; y += step) {
@@ -66,30 +68,62 @@ export function calculateLaplacianVariance(grayscale, width, height) {
 }
 
 /**
- * Analyzes ImageData from a canvas to assess document scan quality.
+ * Deterministically analyzes ImageData to evaluate document quality metrics.
  * 
- * @param {ImageData} imageData 
- * @returns {Object} Quality metrics, level, issues, and warnings
+ * @param {ImageData} imageData The pixel buffer to analyze
+ * @param {Object} [originalDimensions] True source dimensions { width, height }
+ * @returns {Object} Deterministic quality metrics, level (good|fair|poor|unknown), and descriptions
  */
-export function analyzeImageQuality(imageData) {
+export function analyzeImageQuality(imageData, originalDimensions = null) {
+  if (!imageData || !imageData.width || !imageData.height || !imageData.data) {
+    return {
+      qualityLevel: "unknown",
+      qualityDescription: "Image quality could not be measured.",
+      resolutionScore: 0,
+      sharpnessScore: 0,
+      brightnessScore: 0,
+      contrastScore: 0,
+      laplacianVariance: 0,
+      avgBrightness: 0,
+      contrastStdDev: 0,
+      width: 0,
+      height: 0,
+      issues: ["Image data is unavailable or corrupted."],
+      warnings: [],
+      isUsable: false,
+    };
+  }
+
   const { width, height, data } = imageData;
   const totalPixels = width * height;
+
+  let origW = width;
+  let origH = height;
+  if (typeof originalDimensions === "number") {
+    origW = originalDimensions;
+    origH = typeof arguments[2] === "number" ? arguments[2] : width;
+  } else if (originalDimensions && typeof originalDimensions === "object") {
+    origW = originalDimensions.width || width;
+    origH = originalDimensions.height || height;
+  }
+  const totalOrigPixels = origW * origH;
+  const minDimension = Math.min(origW, origH);
 
   const issues = [];
   const warnings = [];
 
-  // 1. Resolution Check
-  const minDimension = Math.min(width, height);
+  // 1. Resolution Check (evaluated against true original dimensions)
   let resolutionScore = 100;
-
-  if (width < 400 || height < 400 || totalPixels < 200_000) {
+  if (origW < 400 || origH < 400 || totalOrigPixels < 200_000) {
     resolutionScore = 30;
-    issues.push("Image resolution is very low (< 400px). Small text may not be readable.");
-  } else if (minDimension < 600 || totalPixels < 500_000) {
+    issues.push("Image resolution is very low (< 400px). Small certificate text may not be readable.");
+  } else if (minDimension < 600 || totalOrigPixels < 500_000) {
     resolutionScore = 65;
     warnings.push("Moderate resolution. Clearer scans improve OCR extraction accuracy.");
+  } else if (totalOrigPixels >= 1_000_000) {
+    resolutionScore = 100;
   } else {
-    resolutionScore = Math.min(100, Math.round((totalPixels / 2_000_000) * 100));
+    resolutionScore = Math.min(100, Math.round((totalOrigPixels / 1_000_000) * 100));
   }
 
   // 2. Grayscale, Luminance & Contrast Calculation
@@ -117,11 +151,11 @@ export function analyzeImageQuality(imageData) {
   } else if (avgBrightness < 75) {
     brightnessScore = 60;
     warnings.push("Image is somewhat dark. Consider uploading a scan with better lighting.");
-  } else if (avgBrightness > 235) {
+  } else if (avgBrightness > 250) {
     brightnessScore = 40;
     issues.push("Image is washed out / overexposed. Faint certificate print may be lost.");
-  } else if (avgBrightness > 215) {
-    brightnessScore = 70;
+  } else if (avgBrightness > 242) {
+    brightnessScore = 75;
     warnings.push("Image is bright. Ensure all printed lines and stamps are clearly visible.");
   }
 
@@ -130,11 +164,11 @@ export function analyzeImageQuality(imageData) {
   if (contrastStdDev < 15) {
     contrastScore = 20;
     issues.push("Image has almost no contrast or is a blank/flat page.");
-  } else if (contrastStdDev < 30) {
+  } else if (contrastStdDev < 28) {
     contrastScore = 55;
     warnings.push("Low contrast between text and background.");
   } else {
-    contrastScore = Math.min(100, Math.round((contrastStdDev / 70) * 100));
+    contrastScore = Math.min(100, Math.round((contrastStdDev / 60) * 100));
   }
 
   // 5. Sharpness / Blur Detection (Laplacian Variance)
@@ -144,19 +178,23 @@ export function analyzeImageQuality(imageData) {
   if (laplacianVar < 40) {
     sharpnessScore = 25;
     issues.push("Image is blurry or out of focus. Text edges cannot be clearly recognized.");
-  } else if (laplacianVar < 110) {
+  } else if (laplacianVar < 100) {
     sharpnessScore = 60;
     warnings.push("Image has mild blur. Some characters (like 0 vs 8 or 3 vs 8) may be misread.");
   } else {
-    sharpnessScore = Math.min(100, Math.round((laplacianVar / 300) * 100));
+    sharpnessScore = Math.min(100, Math.round((laplacianVar / 250) * 100));
   }
 
-  // Overall Quality Level
+  // Overall Quality Level & Description
   let qualityLevel = "good";
-  if (issues.length > 0 || resolutionScore < 40 || sharpnessScore < 40 || contrastScore < 30) {
+  let qualityDescription = "Resolution, sharpness, and contrast are suitable for reliable OCR.";
+
+  if (issues.length > 0 || resolutionScore < 40 || sharpnessScore < 40 || contrastScore < 30 || brightnessScore < 40) {
     qualityLevel = "poor";
-  } else if (warnings.length > 0 || resolutionScore < 70 || sharpnessScore < 70 || brightnessScore < 70) {
+    qualityDescription = "Image is too blurry, dark, washed out, or low-resolution for reliable OCR.";
+  } else if (warnings.length > 0 || resolutionScore < 70 || sharpnessScore < 70 || brightnessScore < 70 || contrastScore < 60) {
     qualityLevel = "fair";
+    qualityDescription = "Image is readable but moderate blur or lighting may reduce OCR accuracy.";
   }
 
   return {
@@ -167,24 +205,120 @@ export function analyzeImageQuality(imageData) {
     laplacianVariance: Math.round(laplacianVar),
     avgBrightness: Math.round(avgBrightness),
     contrastStdDev: Math.round(contrastStdDev),
-    width,
-    height,
+    width: origW,
+    height: origH,
     qualityLevel,
+    qualityDescription,
     issues,
     warnings,
     isUsable: qualityLevel !== "poor" || issues.length <= 1,
+    isReadable: qualityLevel !== "poor",
   };
 }
+
+/**
+ * Analyzes quality from an HTMLCanvasElement (used for both image uploads and rendered PDF pages).
+ * 
+ * @param {HTMLCanvasElement} canvas
+ * @param {Object} [originalDimensions]
+ * @returns {Object}
+ */
+export function analyzeCanvasQuality(canvas, originalDimensions = null) {
+  if (!canvas || !canvas.width || !canvas.height) {
+    return {
+      qualityLevel: "unknown",
+      qualityDescription: "Image quality could not be measured.",
+      resolutionScore: 0,
+      sharpnessScore: 0,
+      brightnessScore: 0,
+      contrastScore: 0,
+      issues: ["Canvas buffer is invalid."],
+      warnings: [],
+      isUsable: false,
+    };
+  }
+
+  try {
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    return analyzeImageQuality(imageData, originalDimensions || { width: canvas.width, height: canvas.height });
+  } catch (err) {
+    return {
+      qualityLevel: "unknown",
+      qualityDescription: "Image quality could not be measured.",
+      resolutionScore: 0,
+      sharpnessScore: 0,
+      brightnessScore: 0,
+      contrastScore: 0,
+      issues: ["Failed to inspect canvas pixels."],
+      warnings: [],
+      isUsable: true,
+    };
+  }
+}
+
+/**
+ * Evaluates enhanced canvas after adaptive recovery for FAIR or POOR quality documents.
+ * Updates qualityLevel if recovered, or marks isTrusted: false if still poor.
+ * 
+ * @param {Object} originalQuality
+ * @param {HTMLCanvasElement} enhancedCanvas
+ * @returns {Object}
+ */
+export function recheckQualityAfterEnhancement(originalQuality, enhancedCanvas) {
+  if (!enhancedCanvas || !originalQuality) return originalQuality;
+  const recheck = analyzeCanvasQuality(enhancedCanvas, {
+    width: originalQuality.width || enhancedCanvas.width,
+    height: originalQuality.height || enhancedCanvas.height,
+  });
+
+  const isRecovered = recheck.qualityLevel === "good" || (originalQuality.qualityLevel === "poor" && recheck.qualityLevel === "fair");
+
+  if (isRecovered) {
+    return {
+      ...recheck,
+      recoveredViaEnhancement: true,
+      qualityDescription: `Quality improved to ${recheck.qualityLevel.toUpperCase()} after adaptive preprocessing enhancement.`,
+      warnings: [...(recheck.warnings || []), "Image quality was enhanced via adaptive preprocessing for OCR."],
+      isTrusted: true,
+      isUsable: true,
+    };
+  }
+
+  // If still poor after enhancement
+  if (recheck.qualityLevel === "poor") {
+    return {
+      ...recheck,
+      recoveredViaEnhancement: false,
+      isTrusted: false,
+      isUsable: true, // proceed to OCR without aborting early
+      qualityDescription: "Document quality remains poor after adaptive enhancement. Fields cannot be reliably trusted. Please verify manually or upload a clearer scan.",
+      warnings: [
+        ...(recheck.warnings || []),
+        "Document quality remains poor after adaptive enhancement. Extracted fields require manual verification.",
+      ],
+    };
+  }
+
+  return {
+    ...recheck,
+    isTrusted: true,
+    isUsable: true,
+  };
+}
+
 
 /**
  * Reads quality from a browser File / Blob object.
  */
 export async function checkFileQuality(file) {
   if (!file) return null;
+
   if (file.type === "application/pdf") {
-    // For PDF files, resolution and rendering are handled dynamically during rasterization
+    // For PDF files, rasterized page quality will be measured dynamically per page during renderPDFPages
     return {
       qualityLevel: "good",
+      qualityDescription: "PDF document rasterized at high resolution for OCR.",
       resolutionScore: 95,
       sharpnessScore: 95,
       brightnessScore: 95,
@@ -198,16 +332,51 @@ export async function checkFileQuality(file) {
 
   try {
     let bitmap = null;
+    let origWidth = 0;
+    let origHeight = 0;
+
     if (typeof createImageBitmap === "function") {
       bitmap = await createImageBitmap(file);
+      origWidth = bitmap.width;
+      origHeight = bitmap.height;
+    } else if (typeof Image !== "undefined") {
+      bitmap = await new Promise((resolve, reject) => {
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        img.onload = () => {
+          URL.revokeObjectURL(url);
+          resolve(img);
+        };
+        img.onerror = () => {
+          URL.revokeObjectURL(url);
+          reject(new Error("Image decoding failed"));
+        };
+        img.src = url;
+      });
+      origWidth = bitmap.naturalWidth || bitmap.width;
+      origHeight = bitmap.naturalHeight || bitmap.height;
     } else {
-      // Fallback for environments without createImageBitmap
       return {
-        qualityLevel: "good",
-        resolutionScore: 80,
-        sharpnessScore: 80,
-        brightnessScore: 80,
-        contrastScore: 80,
+        qualityLevel: "unknown",
+        qualityDescription: "Image quality could not be measured in this environment.",
+        resolutionScore: 0,
+        sharpnessScore: 0,
+        brightnessScore: 0,
+        contrastScore: 0,
+        issues: [],
+        warnings: ["Image quality check could not be completed."],
+        isUsable: true,
+      };
+    }
+
+    if (typeof document === "undefined") {
+      return {
+        qualityLevel: "unknown",
+        qualityDescription: "Image quality could not be measured.",
+        resolutionScore: 0,
+        sharpnessScore: 0,
+        brightnessScore: 0,
+        contrastScore: 0,
         issues: [],
         warnings: [],
         isUsable: true,
@@ -215,35 +384,30 @@ export async function checkFileQuality(file) {
     }
 
     const canvas = document.createElement("canvas");
-    // Cap dimensions for fast quality analysis
-    const maxDim = 800;
-    const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
-    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    // Cap dimensions for analysis performance while keeping aspect ratio
+    const maxDim = 1200;
+    const scale = Math.min(1, maxDim / Math.max(origWidth, origHeight, 1));
+    canvas.width = Math.max(1, Math.round(origWidth * scale));
+    canvas.height = Math.max(1, Math.round(origHeight * scale));
 
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
     ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
     bitmap.close?.();
 
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const result = analyzeImageQuality(imageData);
-
-    // Attach original dimensions
-    result.originalWidth = bitmap.width;
-    result.originalHeight = bitmap.height;
-
-    return result;
+    return analyzeImageQuality(imageData, { width: origWidth, height: origHeight });
   } catch (err) {
-    console.warn("Quality check error, proceeding with standard OCR:", err);
     return {
-      qualityLevel: "fair",
-      resolutionScore: 70,
-      sharpnessScore: 70,
-      brightnessScore: 70,
-      contrastScore: 70,
+      qualityLevel: "unknown",
+      qualityDescription: "Image quality could not be measured.",
+      resolutionScore: 0,
+      sharpnessScore: 0,
+      brightnessScore: 0,
+      contrastScore: 0,
       issues: [],
       warnings: ["Image quality check could not be completed."],
       isUsable: true,
     };
   }
 }
+

@@ -15,28 +15,28 @@ import {
 describe("fieldNormalizer", () => {
   describe("Name Normalization & Honorifics", () => {
     test("strips standard Indian honorifics and salutations", () => {
-      expect(stripHonorifics("Thiru Nithishkumar M")).toBe("Nithishkumar M");
-      expect(stripHonorifics("Tmt. Ananya")).toBe("Ananya");
-      expect(stripHonorifics("Selvi Deepa")).toBe("Deepa");
-      expect(stripHonorifics("Mr. Rahul Sharma")).toBe("Rahul Sharma");
-      expect(stripHonorifics("Shri Murugan S")).toBe("Murugan S");
-      expect(stripHonorifics("S/O Thiru K. Murugan")).toBe("K. Murugan");
+      expect(stripHonorifics("Thiru SAMPLE STUDENT")).toBe("SAMPLE STUDENT");
+      expect(stripHonorifics("Tmt. DEMO CANDIDATE")).toBe("DEMO CANDIDATE");
+      expect(stripHonorifics("Selvi TEST APPLICANT")).toBe("TEST APPLICANT");
+      expect(stripHonorifics("Mr. DEMO USER")).toBe("DEMO USER");
+      expect(stripHonorifics("Shri SAMPLE PARENT")).toBe("SAMPLE PARENT");
+      expect(stripHonorifics("S/O Thiru SAMPLE FATHER")).toBe("SAMPLE FATHER");
     });
 
     test("normalizes whitespace and cleans characters in names", () => {
-      expect(normalizeName("  NITHISHKUMAR   M  ")).toBe("NITHISHKUMAR M");
-      expect(normalizeName("Dr. Ragul C.")).toBe("Ragul C.");
+      expect(normalizeName("  SAMPLE   STUDENT  ")).toBe("SAMPLE STUDENT");
+      expect(normalizeName("Dr. DEMO CANDIDATE")).toBe("DEMO CANDIDATE");
     });
 
     test("tokenSort sorts tokens for word-order invariant match", () => {
-      expect(tokenSort("Nithish Kumar")).toBe("kumar nithish");
-      expect(tokenSort("Kumar Nithish")).toBe("kumar nithish");
-      expect(tokenSort("M Nithishkumar")).toBe("m nithishkumar");
+      expect(tokenSort("SAMPLE STUDENT")).toBe("sample student");
+      expect(tokenSort("STUDENT SAMPLE")).toBe("sample student");
+      expect(tokenSort("M SAMPLE STUDENT")).toBe("m sample student");
     });
 
     test("formatTitleName converts uppercase to Title Case while keeping initials uppercase", () => {
-      expect(formatTitleName("NITHISHKUMAR M")).toBe("Nithishkumar M");
-      expect(formatTitleName("RAGUL C")).toBe("Ragul C");
+      expect(formatTitleName("SAMPLE STUDENT M")).toBe("Sample Student M");
+      expect(formatTitleName("DEMO CANDIDATE")).toBe("Demo Candidate");
     });
   });
 

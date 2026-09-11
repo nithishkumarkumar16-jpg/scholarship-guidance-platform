@@ -8,7 +8,6 @@ function Dashboard() {
   const [currentAd, setCurrentAd] = useState(0);
   const [showDeleteWarning, setShowDeleteWarning] = useState(true);
   const [isExiting, setIsExiting] = useState(false);
-  const [currentAwarenessIdx, setCurrentAwarenessIdx] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
   const notifRef = useRef(null);
 
@@ -29,29 +28,6 @@ function Dashboard() {
     "PMS-MINORITY INCOME LIMIT REVISED FOR 2026-27 — RECHECK ELIGIBILITY",
     "AADHAAR-SEED YOUR BANK ACCOUNT BEFORE APPLYING TO AVOID DBT PAYMENT FAILURE",
     "PMS-OBC APPLICATION DEADLINE EXTENDED — VERIFY DOCUMENTS BEFORE RESUBMITTING",
-  ];
-
-  const awarenessMessages = [
-    {
-      tag: "📑 STEP 1 • UPLOAD CERTIFICATES",
-      quote: "“Step 1: Upload your Aadhaar & marks cards. SGP auto-extracts your name, DOB, and marks to spot errors before official portal upload.”",
-      author: "How to Use SGP • Step 1 of 3 (Certificate Check)"
-    },
-    {
-      tag: "🎯 STEP 2 • CHECK ELIGIBILITY",
-      quote: "“Step 2: Check Eligibility. Get an instant pre-check across 15+ Central & State government schemes tailored to your profile.”",
-      author: "How to Use SGP • Step 2 of 3 (Scheme Pre-Check)"
-    },
-    {
-      tag: "🏦 STEP 3 • VERIFY BANK & DBT",
-      quote: "“Step 3: Verify Bank & DBT. Ensure your bank account is Aadhaar seeded & NPCI mapped for direct DBT scholarship transfer.”",
-      author: "How to Use SGP • Step 3 of 3 (Bank & NPCI Mapping)"
-    },
-    {
-      tag: "🚀 STEP 4 • APPLY WITH CONFIDENCE",
-      quote: "“Step 4: Apply with Confidence. Review your readiness score, fix highlighted mismatches, and submit on official NSP or State portals.”",
-      author: "How to Use SGP • 100% Pre-Submission Ready"
-    }
   ];
 
   const scholarshipAds = [
@@ -164,14 +140,6 @@ function Dashboard() {
     }, 5000);
     return () => clearInterval(interval);
   }, [scholarshipAds.length]);
-
-  // Awareness message auto rotation
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentAwarenessIdx((prev) => (prev + 1) % awarenessMessages.length);
-    }, 8000);
-    return () => clearInterval(interval);
-  }, [awarenessMessages.length]);
 
   const handleNavigation = (path) => {
     setIsExiting(true);
@@ -324,99 +292,6 @@ function Dashboard() {
           </span>
         </div>
       </div>
-
-      {/* ============================================ HERO SECTION ============================================ */}
-      <section className="hero-section">
-        <div className="hero-photo-bg"></div>
-        <div className="hero-card">
-
-          {/* MAIN ROW: Left Portal Guide + Right 3D Visual Showcase */}
-          <div className="hero-main-row">
-
-            {/* LEFT: First-Time User Portal Clean Hero Introduction */}
-            <div className="hero-portal-display" style={{ justifyContent: "center", gap: "16px", padding: "30px 32px" }}>
-              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                  <span className="portal-tag">👋 FIRST-TIME USER? START HERE</span>
-                  <span style={{ fontSize: "11.5px", color: "#8A5C00", fontWeight: 700 }}>• 3-Step Verification Guide</span>
-                </div>
-                <h1 className="portal-heading font-display">
-                  Smart Pre-Submission <span className="accent">Scholarship Verification</span>
-                </h1>
-                <p className="portal-desc" style={{ fontSize: "14.5px", color: "#5D4A26", lineHeight: 1.6, maxWidth: "680px" }}>
-                  Avoid scholarship rejection.<br />
-                  Check your name and DBT bank seeding before submission.
-                </p>
-              </div>
-
-              {/* Actions & Trust Row */}
-              <div className="portal-actions-row" style={{ marginTop: "4px", paddingTop: "14px" }}>
-                <button
-                  className="portal-start-btn"
-                  onClick={() => scrollToSection("action-cards-grid")}
-                  style={{ padding: "11px 22px", fontSize: "13.5px" }}
-                >
-                  <span>🚀 Start First Step (Upload Documents)</span>
-                  <span>↓</span>
-                </button>
-                <div className="portal-trust-pills">
-                  <span>🔒 Auto-Deleted Privacy</span>
-                  <span>⚡ No Login Needed</span>
-                  <span>🛡️ 100% Free Tool</span>
-                </div>
-              </div>
-            </div>
-
-            {/* RIGHT: Large 3D KYC Verification Showcase Matching Reference Image 2 */}
-            <div className="hero-scan-showcase">
-              <div className="scan-kyc-emblem">
-                <img
-                  src="/kyc_verified_illustration.png"
-                  alt="KYC 3D Document Verification"
-                  className="scan-kyc-img"
-                />
-              </div>
-              <div className="logo-showcase-label">
-                <span>🛡️</span> Smart Pre-Submission Engine
-              </div>
-            </div>
-
-          </div>
-
-          {/* BOTTOM ROW: Full-Width How To Use SGP Step-by-Step Grand Banner */}
-          <div className="quote-card">
-            <div className="quote-header">
-              <span className="quote-tag">{awarenessMessages[currentAwarenessIdx].tag}</span>
-              <button
-                className="quote-refresh-btn"
-                onClick={() => setCurrentAwarenessIdx((prev) => (prev + 1) % awarenessMessages.length)}
-                title="Click for next step"
-              >
-                <span>Next</span> <span>→</span>
-              </button>
-            </div>
-            <div className="quote-text">
-              {awarenessMessages[currentAwarenessIdx].quote}
-            </div>
-            <div className="quote-footer">
-              <span className="quote-author">
-                {awarenessMessages[currentAwarenessIdx].author}
-              </span>
-              <div className="quote-dots">
-                {awarenessMessages.map((_, idx) => (
-                  <span
-                    key={idx}
-                    className={`qdot ${idx === currentAwarenessIdx ? "active" : ""}`}
-                    onClick={() => setCurrentAwarenessIdx(idx)}
-                    title={`Step ${idx + 1}`}
-                  />
-                ))}
-              </div>
-            </div>
-          </div>
-
-        </div>
-      </section>
 
       {/* ============================================ MAIN CONTAINER ============================================ */}
       <main className="dashboard-container">

@@ -57,7 +57,7 @@ const renewalRules = [
   {
     icon: "Marks",
     title: "Minimum Marks / Pass Criteria",
-    desc: "Most scholarships require students to have passed their previous year exams. Merit-cum-Means requires 60%+. Failing a year can result in renewal rejection.",
+    desc: "Most scholarships require students to have passed their previous year exams. Merit-cum-Means requires 60%+. Failing a year may impact renewal eligibility under scheme rules.",
     color: "#fff7ed",
     accent: "#ea580c",
   },
@@ -71,7 +71,7 @@ const renewalRules = [
   {
     icon: "Income",
     title: "Fresh Income Certificate Required",
-    desc: "Income certificates older than 1 year are typically rejected during renewal. Obtain a fresh certificate from the Tahsildar/Revenue Department before applying.",
+    desc: "Income certificates older than 1 year are typically flagged for correction or expired status during renewal. Obtain a fresh certificate from the Tahsildar/Revenue Department before applying.",
     color: "#f0fdf4",
     accent: "#16a34a",
   },
@@ -131,8 +131,8 @@ function RenewalAlert() {
     <div className="renewal-page">
       <div className="renewal-header">
         <div className="renewal-header-brand">
-          <h1>Renewal Guidance</h1>
-          <p>Renew your scholarship on time without missing key checks</p>
+          <h1>Four-Year Renewal Planning & Reminder Framework</h1>
+          <p>Planning / local guidance unless persistent backend is enabled. Prepare renewals on time without missing key checks.</p>
         </div>
         <div className="renewal-header-actions">
           <button className="renewal-btn-back" onClick={() => navigate("/dashboard")}>
@@ -145,7 +145,7 @@ function RenewalAlert() {
       <div className="container">
         <div className="section-header">
           <h2>Government Scholarship Renewal Guide</h2>
-          <p>Everything you need to know to successfully renew your scholarship every year</p>
+          <p>Four-Year Renewal Planning & Reminder Framework — Local guidance and schedule planning before official portal submission.</p>
         </div>
 
         <div className="alert-banner">
@@ -153,7 +153,7 @@ function RenewalAlert() {
           <div>
             <strong>Important:</strong> Scholarships do not auto-renew. You must
             apply manually on the official portal every academic year. Missing the
-            deadline means losing that year's scholarship amount.
+            deadline means losing that year's scholarship amount. Current status: Local guidance unless persistent backend notification delivery is enabled.
           </div>
         </div>
 

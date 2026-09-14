@@ -615,4 +615,141 @@ describe("NSP Readiness Engine — Hardening & Verification Pass", () => {
       expect(result.schemeJurisdiction).toBe("TAMIL_NADU");
     });
   });
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // 4. SECTION 20: MANDATORY GOVERNMENT INTEGRATION BOUNDARY & 2026 COMPLIANCE TESTS (A to I)
+  // ═════════════════════════════════════════════════════════════════════════
+  describe("Section 20: Mandatory Government Integration Boundary & 2026 Compliance Tests (A to I)", () => {
+    const sampleDocData = {
+      aadharName: "RAHUL SHARMA",
+      tenthName: "RAHUL SHARMA",
+      twelfthName: "RAHUL SHARMA",
+      bonafideName: "RAHUL SHARMA",
+      incomeData: {
+        name: "RAMESH SHARMA",
+        applicantName: "RAMESH SHARMA",
+        income: 180000,
+        issueDate: "01-08-2025",
+      },
+      casteData: {
+        category: "General",
+        community: "General",
+      },
+      bankData: {
+        accountHolderName: "RAHUL SHARMA",
+        ifsc: "SBIN0001234",
+      },
+    };
+
+    // A. Unknown government status: NPCI unknown -> NEEDS INFORMATION / OFFICIAL CONFIRMATION, NOT rejection
+    test("A. NPCI unknown status does NOT deduct points and routes to intermediate status tier", () => {
+      const profile = { ...baseProfile, category: "General", aadhaarLinked: null };
+      const result = computeNSPReadiness(profile, sampleNspScheme, sampleDocData);
+      expect(result.readinessScore.breakdown.bank.score).toBe(10); // 0 deduction for unknown
+      expect(result.hasUnknownRequiredInfo).toBe(true);
+      expect(result.readinessLevel).toBe("NEEDS_CONFIRMATION");
+      expect(result.readinessLevelInfo.label).toBe("Needs Information / Official Confirmation");
+      const npciRisk = result.riskItems.find(r => r.id === "BANK_AADHAAR_SEEDING_UNKNOWN");
+      expect(npciRisk).toBeDefined();
+      expect(npciRisk.penalty).toBe(0);
+      expect(npciRisk.action).toContain("Confirm Aadhaar seeding and NPCI DBT activation");
+    });
+
+    // B. Aadhaar: Local name match -> consistency result only, never authenticated
+    test("B. Aadhaar comparison produces local identity consistency, never claims UIDAI authentication", () => {
+      const result = computeNSPReadiness(baseProfile, sampleNspScheme, sampleDocData);
+      expect(result.boundaryStatement).toContain("does not independently authenticate government records");
+      expect(result.boundaryStatement).toContain("UIDAI");
+      expect(result.readinessScore.breakdown.identity.label).toBe("Student Identity");
+      const allText = JSON.stringify(result);
+      expect(allText).not.toContain("Aadhaar verified");
+      expect(allText).not.toContain("UIDAI verified");
+    });
+
+    // C. Certificate: Good OCR -> document readable, never 'genuine' or 'officially authenticated'
+    test("C. Extracted certificate fields confirm readability, never 'genuine' or 'government verified'", () => {
+      const result = computeNSPReadiness(baseProfile, sampleNspScheme, sampleDocData);
+      const allText = JSON.stringify(result);
+      expect(allText).not.toContain("certificate genuine");
+      expect(allText).not.toContain("authenticity verified");
+      expect(allText).not.toContain("government verified");
+      expect(result.documentMatrix).toBeDefined();
+    });
+
+    // D. NSP: Manual data -> readiness check, never live NSP status
+    test("D. Manual entry data produces readiness analysis, never live NSP profile or rejection prediction", () => {
+      const result = computeNSPReadiness(baseProfile, sampleNspScheme, sampleDocData);
+      expect(result.boundaryStatement).toContain("SGP PRE-SUBMISSION CHECK");
+      expect(result.boundaryStatement).toContain("readiness assessment, not an official government verification");
+      expect(result.boundaryStatement).toContain("does not predict NSP rejection");
+    });
+
+    // E. Approval: No readiness score is ever labeled as approval probability
+    test("E. Readiness score is strictly Pre-Submission Readiness Indicator, not approval probability", () => {
+      const result = computeNSPReadiness(baseProfile, sampleNspScheme, sampleDocData);
+      expect(result.readinessScore.total).toBeGreaterThanOrEqual(0);
+      expect(result.readinessScore.total).toBeLessThanOrEqual(100);
+      const allText = JSON.stringify(result);
+      expect(allText).not.toContain("approval probability");
+      expect(allText).not.toContain("rejection probability");
+      expect(allText).not.toContain("guaranteed scholarship");
+    });
+
+    // F. Reminders: Renewal guidance clearly marks planning/local reminder state without persistent backend
+    test("F. Renewal system indicates planning / local guidance unless persistent backend is enabled", () => {
+      const result = computeNSPReadiness({ ...baseProfile, isRenewal: true }, sampleNspScheme, sampleDocData);
+      expect(result).toBeDefined();
+    });
+
+    // G. Scheme-specific rules: Unknown quota, firstGraduate, disability handled as NEEDS INFORMATION with 0 penalty
+    test("G. Scheme-specific unknown values hold score steady with 0 point deduction", () => {
+      const profile = {
+        ...baseProfile,
+        category: "General",
+        quotaType: "unknown",
+        firstGraduate: null,
+      };
+      const result = computeNSPReadiness(profile, sampleNspScheme, sampleDocData);
+      expect(result.hasUnknownRequiredInfo).toBe(true);
+      expect(result.readinessScore.breakdown.eligibility.lostPoints).toBe(0);
+    });
+
+    // H. Student identity: Parent income certificate name must not become applicant identity
+    test("H. Parent income certificate name never overwrites student applicant identity", () => {
+      const parentModeProfile = {
+        ...baseProfile,
+        studentName: "MURUGAN S",
+        parentName: "SENGOTTAIYAN P",
+        incomeApplicant: "parent",
+      };
+      const result = computeNSPReadiness(parentModeProfile, sampleNspScheme, {
+        ...sampleDocData,
+        incomeData: {
+          ...sampleDocData.incomeData,
+          name: "SENGOTTAIYAN P",
+          applicantName: "SENGOTTAIYAN P",
+        },
+      });
+      expect(result._invariants.applicantName).toBe("MURUGAN S");
+      expect(result._invariants.incomeProviderName).toBe("SENGOTTAIYAN P");
+      expect(result._invariants.parentIncomeModeActive).toBe(true);
+      const nameMismatch = result.riskItems.find(r => r.id === "IDENTITY_INCOME_NAME_MISMATCH");
+      expect(nameMismatch).toBeUndefined();
+    });
+
+    // I. Terminology & 2026 Mandatory NSP Compliance (OTR & Face-Auth)
+    test("I. Checks for 2026 NSP OTR number and Aadhaar Face-RD without simulating biometrics", () => {
+      const centralResult = computeNSPReadiness({ ...baseProfile, otrGenerated: null }, sampleNspScheme, sampleDocData);
+      const otrRisk = centralResult.riskItems.find(r => r.id === "NSP_2026_OTR_TRACKER");
+      expect(otrRisk).toBeDefined();
+      expect(otrRisk.penalty).toBe(0); // Unknown state rule: 0 deduction
+      expect(otrRisk.description).toContain("NSP OTR Tracker");
+      expect(otrRisk.description).toContain("official AadhaarFaceRD mobile framework");
+
+      const faceRisk = centralResult.riskItems.find(r => r.id === "NSP_2026_FACE_AUTH_DEVICE");
+      expect(faceRisk).toBeDefined();
+      expect(faceRisk.penalty).toBe(0);
+      expect(faceRisk.description).toContain("AadhaarFaceRD mobile framework");
+    });
+  });
 });

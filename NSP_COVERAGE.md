@@ -1,15 +1,42 @@
 # NSP Coverage & Knowledge Base Audit Report (SGP)
 
-## 1. Executive Summary
+## 1. Executive Summary & Core Positioning
 
-This document provides a factual, non-inflated accounting of the scholarships, document types, eligibility rules, and pre-submission consistency checks currently supported in the **Scholarship Guidance Platform (SGP) — NSP Readiness Module**.
+**Core Product Positioning:**
+> **"SGP is a privacy-focused Pre-Submission Scholarship Readiness Platform that helps students identify and correct preventable application issues before submitting through official scholarship portals."**
+
+**Secondary Statement:**
+> **"SGP does not replace NSP, UMIS or government verification systems. It prepares the student's information and documents for submission to those official systems."**
 
 > [!IMPORTANT]
-> **Boundary Notice:** SGP is a pre-submission readiness checker that detects preventable application and document errors. It does not independently authenticate government records, predict government decisions, or guarantee scholarship approval.
+> **Strict Boundary Notice:** SGP is a pre-submission readiness checker that detects preventable application and document errors. It does not independently authenticate government records, predict government decisions, or guarantee scholarship approval. The official portal remains the source of truth for authentication, application status, verification, sanction, and payment.
 
 ---
 
-## 2. Scheme Knowledge Base Breakdown
+## 2. Capability Matrix — SGP Today vs Official Integration
+
+| Capability | SGP Today | Official Integration Required? | Safe SGP Alternative |
+|---|---|---|---|
+| **NSP live status** | No | Yes | Manual entry + official portal handoff |
+| **NSP submission** | No | Yes | Official portal handoff |
+| **UIDAI authentication** | No | Yes | Local identity consistency |
+| **NPCI live DBT status** | No | Yes | DBT readiness guidance (myaadhaar / branch) |
+| **Government certificate lookup** | No | Yes | Local OCR + cross-document consistency checks |
+| **Certificate authenticity** | No | Yes | Structural/document completeness review |
+| **DigiLocker verification** | No | Yes / authorized access | User-directed official verification |
+| **PFMS payment status** | No | Yes | Official portal guidance |
+| **Scholarship approval prediction** | No | Not appropriate | Pre-Submission Risk & Readiness Analysis |
+| **Persistent reminders** | Partially planned | Backend required | Local renewal planning & schedule framework |
+| **OCR** | Yes | No | Browser-local Tesseract.js |
+| **Cross-document comparison** | Yes | No | Local deterministic consistency engine |
+| **Eligibility guidance** | Yes | No | Rule-based potential matching from official rules |
+| **Document completeness** | Yes | No | Checklist engine |
+| **DBT readiness guidance** | Yes | No | Official confirmation required advisory |
+| **Official submission** | No | Yes | Portal handoff (scholarships.gov.in / UMIS) |
+
+---
+
+## 3. Scheme Knowledge Base Breakdown
 
 Total Schemes in `src/knowledge/nspSchemes.js`: **11 schemes**
 - **Verified (`VERIFIED`)**: **8 schemes** (Confirmed from current authoritative government sources)
@@ -34,11 +61,11 @@ Total Schemes in `src/knowledge/nspSchemes.js`: **11 schemes**
 
 ---
 
-## 3. Supported Document Types
+## 4. Supported Document Types
 
 The engine supports checking and extracting consistency signals across **10 standard scholarship certificate types**:
 
-1. **Aadhaar Card** (Identity verification, name normalisation, DOB, gender)
+1. **Aadhaar Card** (Identity consistency, name normalisation, DOB, gender)
 2. **Class 10 Marksheet** (DOB statutory reference, secondary school name record)
 3. **Class 12 / Higher Secondary Marksheet** (Qualifying percentage, board, registration number)
 4. **Income Certificate** (Parent/guardian or student income, certificate number, issue date, currency check ≤ 1 year)
@@ -51,7 +78,7 @@ The engine supports checking and extracting consistency signals across **10 stan
 
 ---
 
-## 4. Supported Eligibility & Profile Dimensions (21 Dimensions)
+## 5. Supported Eligibility & Profile Dimensions (21 Dimensions)
 
 The SGP engine validates the following **21 Eligibility/Profile Dimensions**:
 
@@ -79,17 +106,17 @@ The SGP engine validates the following **21 Eligibility/Profile Dimensions**:
 
 ---
 
-## 5. Pre-Submission Risk Checks (23 Audited Checks)
+## 6. Pre-Submission Risk Checks (24 Audited Checks)
 
-A risk check is a pre-submission consistency check — **NOT an automatic NSP rejection rule**. All 23 checks are classified into one of three distinct categories:
+A risk check is a pre-submission consistency check — **NOT an automatic NSP rejection rule**. All 24 checks are classified into one of three distinct categories:
 
 ### Check Classification Summary
 
 - **Universal Consistency Checks (`UNIVERSAL_CONSISTENCY_CHECK`)**: 8 checks (General consistency across student documents regardless of scheme)
-- **Scheme-Specific Checks (`SCHEME_SPECIFIC_CHECK`)**: 11 checks (Evaluated strictly against the selected scheme's published rules)
+- **Scheme-Specific Checks (`SCHEME_SPECIFIC_CHECK`)**: 12 checks (Evaluated strictly against the selected scheme's published rules, including 2026 NSP OTR & Face-Auth compliance)
 - **Advisory Checks (`ADVISORY_CHECK`)**: 4 checks (Quality, scan clarity, and variance anomaly review flags)
 
-### Detailed 23-Check Classification Matrix
+### Detailed 24-Check Classification Matrix
 
 | Check ID | Risk / Rule Name | Dimension | Severity | Classification | Description / Handling |
 |---|---|---|---|---|---|
@@ -116,19 +143,70 @@ A risk check is a pre-submission consistency check — **NOT an automatic NSP re
 | 21 | `ELIG_FIRST_GRADUATE_UNKNOWN` | First Graduate status confirmation | Eligibility | `SCHEME_SPECIFIC_CHECK` | Only applies when scheme requires requiresFirstGraduate: true; null preserved as Needs More Info |
 | 22 | `RENEWAL_DOC_MISSING` | Previous year marksheet missing for renewal | Certificates | `SCHEME_SPECIFIC_CHECK` | Only applies when renewal application is submitted |
 | 23 | `APP_CATEGORY_MISMATCH` | Category differs from community certificate | Application | `UNIVERSAL_CONSISTENCY_CHECK` | Cross-checks profile category against community certificate |
+| 24 | `NSP_2026_OTR_TRACKER` | Mandatory 2026 NSP OTR & Face-RD Compliance | Application | `SCHEME_SPECIFIC_CHECK` | Checks OTR number generation & Face-RD device readiness. Never mocks/simulates biometrics |
 
 ---
 
-## 6. Official Product Positioning & Capability Boundaries
+## 7. The Unknown State Rule (100-Point Readiness Engine)
 
-### Final Product Claim
+In the 100-Point Readiness Model:
+- **Zero Penalty for Unknowns:** If a data block is unverified or missing (e.g., student hasn't checked NPCI mapping or First Graduate status is left as null), the system **holds the score steady** with 0 point deduction.
+- **Intermediate Status Tier:** It routes the application to **"NEEDS INFORMATION / OFFICIAL CONFIRMATION"**.
+- **Contradiction-Only Deductions:** Points can **ONLY** be deducted if there is an explicit, extracted contradiction (e.g. an expired certificate date, a direct name character mismatch, or an IFSC syntax violation).
 
-> **"SGP helps students prepare for scholarship submission by checking eligibility information, document completeness, cross-document consistency, and common pre-submission issues before they submit through the official portal."**
+---
 
-### Explicit Boundary Disclaimers
+## 8. Four-Year Renewal Planning & Reminder Framework
+
+- **Current Status:** `Planning / local guidance unless persistent backend is enabled.`
+- **Design:** Provides annual renewal milestones, checklist preparation, and scheme deadline calendars locally in the browser.
+- **Future Production Architecture:**
+  `Student Consent → Minimal Structured Reminder Record → Secure Database → Scheduler Worker → Email/SMS/Push Provider → Delivery Status → Renewal Tracking`
+- **Privacy Guarantee:** Certificate images and sensitive biometric records are **never** stored for reminder functionality.
+
+---
+
+## 9. Government Integration Roadmap
+
+```mermaid
+flowchart TD
+    L0["LEVEL 0 — CURRENT SGP (Active)
+    • Browser-local Tesseract.js OCR
+    • Local Document Parsing & Normalization
+    • Cross-Document Consistency Engine
+    • Rule-Based Eligibility Guidance
+    • 100-Pt Pre-Submission Readiness Scoring
+    • DBT Readiness Guidance (Advisory)
+    • Official Portal Handoff Links
+    • Zero Server Storage / Privacy-First"]
+    
+    L1["LEVEL 1 — AUTHORIZED DATA SOURCES (Future)
+    • Official Scheme Rules API Data Feeds
+    • Gazette Policy Updates
+    • Authorized State Certificate Verification
+    • Authorized DigiLocker Integration"]
+    
+    L2["LEVEL 2 — IDENTITY / PAYMENT INTEGRATION (Future)
+    • Authorized UIDAI Authentication Services
+    • NPCI Live DBT Seeding Status API
+    • PFMS Disbursement Status API"]
+    
+    L3["LEVEL 3 — OFFICIAL WORKFLOW INTEGRATION (Future)
+    • Authorized NSP OTR Direct Integration
+    • Bi-directional Defect/Query Status
+    • Direct Submission Handoff (OAuth)"]
+
+    L0 -->|Requires Authorized Government Access| L1
+    L1 -->|Requires Statutory Approvals| L2
+    L2 -->|Requires Ministry Partnership| L3
+```
+
+---
+
+## 10. Explicit Boundary Disclaimers
 
 1. **Do NOT claim SGP predicts NSP rejection**: SGP provides pre-submission risk checks and anomaly detection, not predictive rejection decisions.
-2. **Do NOT claim SGP verifies government documents**: SGP inspects document clarity, consistency, and completeness offline. It does not connect to live government databases.
+2. **Do NOT claim SGP verifies government documents**: SGP inspects document clarity, consistency, and completeness locally in the browser. It does not connect to live government databases.
 3. **Do NOT claim SGP guarantees NSP approval**: Final sanction and fund disbursement are strictly subject to official portal verification and quota limits.
 4. **Do NOT claim all NSP scholarships are verified**: Only schemes audited against authoritative official gazettes are marked `VERIFIED`; others are marked `PARTIALLY_VERIFIED` or `UNVERIFIED`.
 5. **No Live NPCI / UIDAI Connectivity**: SGP cannot verify real-time Aadhaar-bank seeding on the NPCI mapper. It provides guidance on how students can check status on `myaadhaar.uidai.gov.in`.

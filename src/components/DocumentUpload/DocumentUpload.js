@@ -38,7 +38,7 @@ const DCFG = {
   ms10:      { label: "10th Marksheet",        Icon: I.Clipboard, desc: "10th board certificate or SSLC marksheet",               color: "green"  },
   ms12:      { label: "12th Marksheet",        Icon: I.Clipboard, desc: "12th board / HSC marksheet or certificate",              color: "purple" },
   community: { label: "Community Certificate", Icon: I.Scroll,    desc: "Govt-issued community / caste certificate",              color: "orange" },
-  income:    { label: "Income Certificate",    Icon: I.Banknote,  desc: "Must be within 6-12 months. Freshness verified locally.", color: "blue"   },
+  income:    { label: "Income Certificate",    Icon: I.Banknote,  desc: "Must be within 6-12 months. Issue date checked locally.", color: "blue"   },
 };
 
 export const DOC_FIELD_DEFINITIONS = {
@@ -681,6 +681,17 @@ export default function DocumentUpload({ initialDs = null, initialStep = 1 } = {
               </div>
             )}
 
+            {/* Low OCR Confidence Warning (<65%) */}
+            {((s.data?.ocrConfidence !== null && s.data?.ocrConfidence !== undefined && s.data.ocrConfidence < 65) || (s.data?.fieldConfidence !== null && s.data?.fieldConfidence !== undefined && s.data.fieldConfidence < 65)) && (
+              <div className="blurry-scan-warning-banner" style={{ background: "#eff6ff", border: "1.5px solid #93c5fd", borderRadius: 8, padding: "10px 14px", marginBottom: 10, fontSize: 11.5, color: "#1e40af", display: "flex", alignItems: "flex-start", gap: 8 }}>
+                <span style={{ fontSize: 16, lineHeight: 1 }}>ℹ️</span>
+                <div>
+                  <strong style={{ display: "block", marginBottom: 2 }}>INFO: Blurry Scan Warning</strong>
+                  <span>OCR extraction confidence is below 65%. For optimal multi-document data consistency checking, please ensure clear, high-contrast, well-lit scans (300 DPI recommended). Pipeline will proceed using best-effort text extraction without crashing.</span>
+                </div>
+              </div>
+            )}
+
             {/* Income Freshness Banner */}
             {type === "income" && ext.freshness && (
               <div style={{
@@ -970,7 +981,7 @@ export default function DocumentUpload({ initialDs = null, initialStep = 1 } = {
                 <div className="nsp-f">
                   <label style={labelStyle}>Annual Family Income (INR)</label>
                   <input type="number" value={studentIncome} onChange={e => setStudentIncome(e.target.value)} placeholder="e.g. 200000" style={inputStyle(false)} />
-                  <span style={hintStyle}>Will be cross-verified against Income Certificate amount</span>
+                  <span style={hintStyle}>Will be compared against Income Certificate amount</span>
                 </div>
               </div>
             </div>
@@ -1073,7 +1084,7 @@ export default function DocumentUpload({ initialDs = null, initialStep = 1 } = {
             <div className="bottom-actions" style={{ justifyContent: "space-between" }}>
               <button className="btn-ghost-sm" onClick={() => setStep(1)} style={{ display: "flex", alignItems: "center", gap: 5 }}><I.Back /> Back to Upload</button>
               <button className="btn-massive-primary" onClick={validateDetailsAndProceed} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                View Consistency Report <I.Next />
+                Run Multi-Document Data Consistency Check <I.Next />
               </button>
             </div>
           </div>
@@ -1084,7 +1095,7 @@ export default function DocumentUpload({ initialDs = null, initialStep = 1 } = {
           <div>
             <div className="nsp-profile-strip">
               <div>
-                <div className="ps-name">Document Consistency Verification Report</div>
+                <div className="ps-name">Multi-Document Data Consistency Check Report</div>
                 <div className="ps-info">{aadharName || "—"} | Bank: {bankHolder || "—"} ({bankAccType || "—"})</div>
               </div>
               <div style={{ display: "flex", gap: 8, marginLeft: "auto", flexWrap: "wrap" }}>

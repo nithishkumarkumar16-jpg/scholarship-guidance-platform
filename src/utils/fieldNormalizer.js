@@ -143,27 +143,36 @@ export function formatDateDisplay(dateStr) {
 
 /**
  * Normalizes income representation to a clean positive integer.
- * Handles: ₹2,50,000, Rs. 250000/-, 250000/-, "1,80,000.00"
+ * Handles OCR noise: ₹2,50,000, Rs. 250000/-, R. 180000, "INR 2,00,000/-", "Rs 75,000.00"
  */
 export function normalizeIncome(incomeStr) {
   if (incomeStr === null || incomeStr === undefined) return null;
   if (typeof incomeStr === "number") return incomeStr >= 0 ? Math.round(incomeStr) : null;
 
   let raw = String(incomeStr).trim();
-  if (!raw || raw.toLowerCase() === "null") return null;
+  if (!raw || raw.toLowerCase() === "null" || raw.toLowerCase() === "undefined") return null;
 
   // If explicit leading negative sign, reject
   if (/^\s*-\s*\d/.test(raw)) return null;
 
-  // Remove currency words and prefixes
-  raw = raw.replace(/^(?:₹|Rs\.?|INR|Rupees?)\s*/i, "");
-  // Remove trailing /- or / - or .00
-  raw = raw.replace(/\/\s*-\s*$/, "").replace(/\.00\s*$/, "");
-  // If there's still a decimal point (like 180000.50), take integer part
-  if (raw.includes(".")) {
-    raw = raw.split(".")[0];
+  // Layer 1: Strip currency symbols, words, abbreviations (₹, Rs, R., INR, Rupees, etc.)
+  raw = raw.replace(/(?:₹|[\u20B9]|Rs\.?|R\.(?=\s*\d)|Re\.?|INR|Rupees?)/gi, " ");
+
+  // Layer 2: Remove trailing delimiters (/-, / -, .00, paise)
+  raw = raw.replace(/\/\s*-\s*$/, "");
+  // If dot is used as decimal paise (1-2 digits at end of string), strip decimals
+  raw = raw.replace(/\.\d{1,2}\s*$/, "");
+  // If dots are used as thousand separators (e.g. 1.80.000), strip them
+  raw = raw.replace(/\.(?=\d{3})/g, "");
+
+  // Layer 3: OCR noise scrubbing for commonly confused characters in numeric contexts
+  // If the string contains digits, replace O/o with 0, and l/I with 1
+  if (/\d/.test(raw)) {
+    raw = raw.replace(/[Oo]/g, "0");
+    raw = raw.replace(/(?<=[\d,\s]|^)[lI](?=[\d,\s]|$)/g, "1");
   }
 
+  // Layer 4: Strip all remaining non-numeric characters (commas, whitespace, noise punctuation)
   const clean = raw.replace(/[^\d]/g, "");
   const num = parseInt(clean, 10);
   if (isNaN(num) || num < 0 || num > 100_000_000) return null;

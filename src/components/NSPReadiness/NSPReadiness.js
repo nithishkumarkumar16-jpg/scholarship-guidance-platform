@@ -43,6 +43,8 @@ const defaultProfile = {
   disability: false,
   disabilityPercentage: null,
   armedForcesRelationship: null,
+  otrGenerated: null,
+  faceAuthDeviceAvailable: null,
 };
 
 // ─── Score Colour Helpers ─────────────────────────────────────────────────────
@@ -352,6 +354,52 @@ function Step2Profile({ profile, onChange, scheme }) {
             </select>
           </div>
         )}
+
+        {/* 2026 Mandatory NSP OTR & Face-Authentication Readiness Tracker */}
+        {(scheme?.jurisdiction === "CENTRAL" || scheme?.portal === "NSP" || scheme?.state === "All-India") && (
+          <div style={{ gridColumn: "1 / -1", marginTop: 16, padding: "14px 16px", borderRadius: 10, background: "rgba(30, 41, 59, 0.7)", border: "1.5px solid rgba(99, 102, 241, 0.3)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+              <span style={{ fontSize: 18 }}>📱</span>
+              <strong style={{ fontSize: 13, color: "#e2e8f0" }}>2026 Mandatory NSP Compliance (OTR &amp; Face-Auth)</strong>
+            </div>
+            <p style={{ fontSize: 12, color: "#94a3b8", margin: "0 0 12px 0", lineHeight: 1.5 }}>
+              NSP OTR Tracker: Please ensure you have generated your official One-Time Registration (OTR) number via the official NSP portal. Face-Authentication must be executed via the official AadhaarFaceRD mobile framework.
+            </p>
+            <div className="nsp-form-grid" style={{ gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div className="nsp-form-group">
+                <label style={{ fontSize: 11.5 }}>Official 14-Digit NSP OTR Generated?</label>
+                <select
+                  value={profile.otrGenerated === null ? "" : String(profile.otrGenerated)}
+                  onChange={e => {
+                    const v = e.target.value;
+                    set("otrGenerated", v === "" ? null : v === "true");
+                  }}
+                >
+                  <option value="">— Not yet confirmed —</option>
+                  <option value="true">Yes — OTR number generated</option>
+                  <option value="false">No — Not yet registered on NSP</option>
+                </select>
+              </div>
+              <div className="nsp-form-group">
+                <label style={{ fontSize: 11.5 }}>Access to Android/iOS with AadhaarFaceRD?</label>
+                <select
+                  value={profile.faceAuthDeviceAvailable === null ? "" : String(profile.faceAuthDeviceAvailable)}
+                  onChange={e => {
+                    const v = e.target.value;
+                    set("faceAuthDeviceAvailable", v === "" ? null : v === "true");
+                  }}
+                >
+                  <option value="">— Unsure / Check later —</option>
+                  <option value="true">Yes — Smartphone with AadhaarFaceRD ready</option>
+                  <option value="false">No — Smartphone with camera unavailable</option>
+                </select>
+              </div>
+            </div>
+            <div style={{ fontSize: 11, color: "rgba(148, 163, 184, 0.8)", marginTop: 8, fontStyle: "italic" }}>
+              ℹ️ SGP does not simulate or perform face recognition or OTR registration. These official steps must be performed on the official NSP portal / AadhaarFaceRD app.
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -528,6 +576,16 @@ function Step5Score({ profile, scheme }) {
 
   return (
     <div className="nsp-step-card">
+      {/* SGP Pre-Submission Check Badge */}
+      <div style={{ background: "rgba(30, 41, 59, 0.85)", border: "1.5px solid rgba(148, 163, 184, 0.25)", borderRadius: 10, padding: "12px 16px", marginBottom: 20, textAlign: "center" }}>
+        <div style={{ fontSize: 12, fontWeight: 800, color: "#38bdf8", letterSpacing: "0.05em", textTransform: "uppercase", marginBottom: 4 }}>
+          🛡️ SGP PRE-SUBMISSION CHECK
+        </div>
+        <div style={{ fontSize: 12, color: "#cbd5e1", lineHeight: 1.5 }}>
+          This result is a readiness assessment, not an official government verification or approval decision. SGP does not replace government verification.
+        </div>
+      </div>
+
       <h2>NSP Readiness Score</h2>
       <p>Pre-submission readiness for <strong style={{ color: "#a5b4fc" }}>{scheme.name}</strong>.</p>
 
@@ -613,11 +671,24 @@ function Step5Score({ profile, scheme }) {
           {riskItems.map((item, i) => {
             const severityIcon = item.severity === "HIGH_ATTENTION"
               ? "🔴" : item.severity === "MEDIUM_ATTENTION" ? "🟡" : "🔵";
+            const needsOfficialConfirmation =
+              item.id.includes("UNKNOWN") ||
+              item.id.includes("AADHAAR") ||
+              item.id.includes("OTR") ||
+              item.id.includes("RULE_UNVERIFIED");
+
             return (
               <div className={`nsp-risk-item ${item.severity}`} key={i}>
                 <div className="nsp-risk-severity">{severityIcon}</div>
                 <div className="nsp-risk-body">
-                  <div className="nsp-risk-title">{item.title}</div>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                    <div className="nsp-risk-title">{item.title}</div>
+                    {needsOfficialConfirmation && (
+                      <span style={{ fontSize: "10.5px", fontWeight: 700, padding: "2px 8px", borderRadius: 4, background: "rgba(56, 189, 248, 0.15)", color: "#38bdf8", border: "1px solid rgba(56, 189, 248, 0.3)" }}>
+                        Official confirmation required
+                      </span>
+                    )}
+                  </div>
                   <div className="nsp-risk-detail">{item.detail}</div>
                   <div className="nsp-risk-action">💡 {item.action}</div>
                 </div>

@@ -67,7 +67,7 @@ function Dashboard() {
       description: "Aadhaar seeding means your Aadhaar number is stored and verified in the bank's database. This step allows the bank to authenticate your identity but still requires NPCI mapping for DBT payments.",
       icon: "📄",
       background: "linear-gradient(135deg, #b45309 0%, #f59e0b 100%)",
-      eligibility: "Bank Verified",
+      eligibility: "IFSC & Structural Length Values Match Common Parameters",
       incomeLimit: "Partially Ready",
       flow: [["🪪", "Aadhaar"], ["🏦", "Bank Database"], ["✔️", "Seeded"]]
     },
@@ -252,7 +252,7 @@ function Dashboard() {
                     <span className="notif-icon">📄</span>
                     <div>
                       <strong>Document Name Matching</strong>
-                      <p>Verify spelling between Aadhaar &amp; Marks Card to avoid rejection.</p>
+                      <p>Verify spelling between Aadhaar &amp; Marks Card to prevent portal delays.</p>
                     </div>
                   </div>
                 </div>
@@ -584,7 +584,7 @@ function Dashboard() {
                   }}
                 >
                   <span style={{ color: "#34d399", fontWeight: 700, fontSize: "13px" }}>
-                    🚀 Reducing NSP rejection rates by catching errors early!
+                    🚀 Helping prevent application defects and preventable submission errors!
                   </span>
                 </div>
               </div>
@@ -673,7 +673,7 @@ function Dashboard() {
                       fontSize: "12.5px"
                     }}
                   >
-                    🔐 <strong style={{ color: "#c4b5fd" }}>Safe:</strong> End-to-end verified via NPCI &amp; Aadhaar
+                    🔐 <strong style={{ color: "#c4b5fd" }}>Safe:</strong> End-to-end DBT Seeding Guidance via NPCI &amp; Aadhaar parameters
                   </div>
                 </div>
               </div>
@@ -686,7 +686,7 @@ function Dashboard() {
         <div className="pro-info-grid">
           <div className="f1-card f1-blue">
             <h4>🎓 About Platform</h4>
-            <p>Smart pre-submission verification system to prepare you before NSP.</p>
+            <p>Privacy-focused pre-submission readiness platform preparing your application before official portals.</p>
           </div>
           <div className="f1-card f1-green">
             <h4>🔒 Privacy First</h4>

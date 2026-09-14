@@ -73,6 +73,13 @@ export const READINESS_LEVEL_INFO = {
     icon: "✅",
     description: "Your documents and eligibility look strong. Review the official portal and proceed to submit.",
   },
+  NEEDS_CONFIRMATION: {
+    label: "Needs Information / Official Confirmation",
+    color: "#0284c7",
+    bgColor: "rgba(2,132,199,0.12)",
+    icon: "ℹ️",
+    description: "Some required details or official live statuses are unconfirmed. Verify them on official portals before submitting.",
+  },
   REVIEW_BEFORE_SUBMIT: {
     label: "Review Before Submit",
     color: "#f59e0b",
@@ -102,10 +109,18 @@ export const CHECK_TYPES = {
   ADVISORY_CHECK: "ADVISORY_CHECK",
 };
 
+export const CORE_POSITIONING =
+  "SGP is a privacy-focused Pre-Submission Scholarship Readiness Platform that helps students identify and correct preventable application issues before submitting through official scholarship portals.";
+
+export const SECONDARY_POSITIONING =
+  "SGP does not replace NSP, UMIS or government verification systems. It prepares the student's information and documents for submission to those official systems.";
+
 export const BOUNDARY_STATEMENT =
-  "SGP helps students prepare for scholarship submission by checking eligibility information, " +
-  "document completeness, cross-document consistency, and common pre-submission issues before they submit through the official portal. " +
-  "SGP checks document information and consistency and does not independently authenticate government records. " +
+  "SGP checks document information and consistency. It does not independently authenticate government records, " +
+  "guarantee scholarship approval, confirm certificate database authenticity, or access NPCI / UIDAI live systems. " +
+  "SGP PRE-SUBMISSION CHECK: This result is a readiness assessment, not an official government verification or approval decision. " +
+  "SGP does not replace government verification. It reduces preventable errors before government verification begins. " +
+  "The official portal remains the source of truth for authentication, application status, verification, sanction and payment. " +
   "SGP does not predict NSP rejection, and does not guarantee scholarship approval.";
 
 // ─── Utility Functions ────────────────────────────────────────────────────────
@@ -221,9 +236,10 @@ export function isValidIFSC(ifsc) {
  * Determine readiness level considering both numerical score and presence of unknown required info.
  */
 export function getReadinessLevel(score, hasUnknownRequired = false) {
-  if (score >= READINESS_THRESHOLDS.READY_TO_SUBMIT) {
-    return hasUnknownRequired ? "REVIEW_BEFORE_SUBMIT" : "READY_TO_SUBMIT";
+  if (hasUnknownRequired && score >= READINESS_THRESHOLDS.REVIEW_BEFORE_SUBMIT) {
+    return "NEEDS_CONFIRMATION";
   }
+  if (score >= READINESS_THRESHOLDS.READY_TO_SUBMIT) return hasUnknownRequired ? "NEEDS_CONFIRMATION" : "READY_TO_SUBMIT";
   if (score >= READINESS_THRESHOLDS.REVIEW_BEFORE_SUBMIT) return "REVIEW_BEFORE_SUBMIT";
   if (score >= READINESS_THRESHOLDS.CORRECTIONS_NEEDED) return "CORRECTIONS_NEEDED";
   return "NOT_READY";
@@ -241,9 +257,11 @@ function risk(id, severity, box, field, title, detail, action, scoreDeduction = 
     title,
     evidence: detail,
     detail,
+    description: detail,
     action,
     recommendedAction: action,
     scoreDeduction,
+    penalty: scoreDeduction,
     checkType,
   };
 }
@@ -779,7 +797,7 @@ export function computeNSPReadiness(profile = {}, scheme = null, documentData = 
     // Check if current-year rule is UNVERIFIED
     if (scheme.ruleStatus === "UNVERIFIED") {
       hasUnknownRequiredInfo = true;
-      deduct("eligibility", 5, risk(
+      items.push(risk(
         "RULE_UNVERIFIED_NOTICE",
         "MEDIUM_ATTENTION",
         "eligibility",
@@ -787,7 +805,7 @@ export function computeNSPReadiness(profile = {}, scheme = null, documentData = 
         "Current-year eligibility condition requires confirmation",
         `Current-year rules for ${schemeName} are not fully confirmed from authoritative gazette.`,
         "Check the official portal before applying. SGP will not reject this scheme automatically.",
-        5,
+        0, // Unknown State Rule: 0 points deduction
         CHECK_TYPES.SCHEME_SPECIFIC_CHECK
       ));
     }
@@ -798,7 +816,7 @@ export function computeNSPReadiness(profile = {}, scheme = null, documentData = 
       // Full score
     } else if (eligResult.status === "POTENTIAL MATCH") {
       hasUnknownRequiredInfo = true;
-      deduct("eligibility", 5, risk(
+      items.push(risk(
         "ELIG_POTENTIAL_ONLY",
         "MEDIUM_ATTENTION",
         "eligibility",
@@ -806,12 +824,12 @@ export function computeNSPReadiness(profile = {}, scheme = null, documentData = 
         "Eligibility is potential — some criteria are unconfirmed",
         `Missing or unconfirmed: ${(eligResult.missingRequirements || []).slice(0, 3).join(", ")}.`,
         "Confirm all missing eligibility criteria before submitting to the portal.",
-        5,
+        0, // Unknown State Rule: 0 points deduction
         CHECK_TYPES.SCHEME_SPECIFIC_CHECK
       ));
     } else if (eligResult.status === "NEEDS MORE INFORMATION") {
       hasUnknownRequiredInfo = true;
-      deduct("eligibility", 12, risk(
+      items.push(risk(
         "ELIG_NEEDS_INFO",
         "HIGH_ATTENTION",
         "eligibility",
@@ -819,14 +837,14 @@ export function computeNSPReadiness(profile = {}, scheme = null, documentData = 
         "Eligibility cannot be confirmed — required information missing",
         `Required but missing: ${(eligResult.missingRequirements || []).slice(0, 3).join(", ")}.`,
         "Provide the missing eligibility information. Do not submit until eligibility is confirmed.",
-        12,
+        0, // Unknown State Rule: 0 points deduction
         CHECK_TYPES.SCHEME_SPECIFIC_CHECK
       ));
     } else if (eligResult.status === "NOT MATCHED") {
       // If unverified scheme, do NOT hard-fail eligibility
       if (scheme.ruleStatus === "UNVERIFIED") {
         hasUnknownRequiredInfo = true;
-        deduct("eligibility", 8, risk(
+        items.push(risk(
           "ELIG_UNVERIFIED_GAP",
           "MEDIUM_ATTENTION",
           "eligibility",
@@ -834,7 +852,7 @@ export function computeNSPReadiness(profile = {}, scheme = null, documentData = 
           "Unverified condition may differ from current notification",
           `Rule status is unverified. Check official guidelines.`,
           "Verify your eligibility on the official portal.",
-          8,
+          0, // Unknown State Rule: 0 points deduction
           CHECK_TYPES.SCHEME_SPECIFIC_CHECK
         ));
       } else {
@@ -1017,7 +1035,7 @@ export function computeNSPReadiness(profile = {}, scheme = null, documentData = 
     const profileState = profile.state || profile.domicile || null;
     if (!profileState) {
       hasUnknownRequiredInfo = true;
-      deduct("application", 4, risk(
+      items.push(risk(
         "APP_DOMICILE_MISSING",
         "MEDIUM_ATTENTION",
         "application",
@@ -1025,7 +1043,7 @@ export function computeNSPReadiness(profile = {}, scheme = null, documentData = 
         "State of domicile not confirmed for a state-specific scheme",
         `${schemeName} is restricted to ${schemeState || "specific state"}. Domicile is not specified.`,
         `Confirm you are a permanent resident of ${schemeState || "the applicable state"}. Domicile certificate may be required.`,
-        4,
+        0, // Unknown State Rule: 0 points deduction
         CHECK_TYPES.SCHEME_SPECIFIC_CHECK
       ));
     } else if (schemeState && schemeState !== "All-India" && profileState.toLowerCase() !== schemeState.toLowerCase()) {
@@ -1069,7 +1087,7 @@ export function computeNSPReadiness(profile = {}, scheme = null, documentData = 
       }
     } else if (profile.disability === true || documentData.disabilityCert) {
       hasUnknownRequiredInfo = true;
-      deduct("application", 3, risk(
+      items.push(risk(
         "APP_DISABILITY_PERCENTAGE_UNKNOWN",
         "MEDIUM_ATTENTION",
         "application",
@@ -1077,7 +1095,7 @@ export function computeNSPReadiness(profile = {}, scheme = null, documentData = 
         "Disability percentage requires confirmation",
         `${schemeName} requires minimum ${minDisabilityPct}% disability, but percentage is not confirmed.`,
         "Enter disability percentage from the District Medical Board certificate.",
-        3,
+        0, // Unknown State Rule: 0 points deduction
         CHECK_TYPES.SCHEME_SPECIFIC_CHECK
       ));
     }
@@ -1152,7 +1170,7 @@ export function computeNSPReadiness(profile = {}, scheme = null, documentData = 
     ));
   } else if (aadhaarLinked === null) {
     hasUnknownRequiredInfo = true;
-    deduct("bank", 2, risk(
+    items.push(risk(
       "BANK_AADHAAR_SEEDING_UNKNOWN",
       "LOW_ATTENTION",
       "bank",
@@ -1160,7 +1178,7 @@ export function computeNSPReadiness(profile = {}, scheme = null, documentData = 
       "Aadhaar-bank seeding status not confirmed",
       "Could not confirm whether Aadhaar is seeded and DBT is enabled for the bank account.",
       "Confirm Aadhaar seeding and NPCI DBT activation at your bank branch or via myaadhaar.uidai.gov.in",
-      2,
+      0, // Unknown State Rule: 0 points deduction
       CHECK_TYPES.SCHEME_SPECIFIC_CHECK
     ));
   }
@@ -1205,7 +1223,7 @@ export function computeNSPReadiness(profile = {}, scheme = null, documentData = 
     }
   } else if (documentData.incomeData) {
     hasUnknownRequiredInfo = true;
-    deduct("certificates", 3, risk(
+    items.push(risk(
       "CERT_INCOME_DATE_MISSING",
       "MEDIUM_ATTENTION",
       "certificates",
@@ -1213,7 +1231,7 @@ export function computeNSPReadiness(profile = {}, scheme = null, documentData = 
       "Income certificate issue date could not be read",
       "Issue date was not extracted from the income certificate image.",
       "Ensure issue date is clearly visible on the income certificate.",
-      3,
+      0, // Unknown State Rule: 0 points deduction
       CHECK_TYPES.SCHEME_SPECIFIC_CHECK
     ));
   }
@@ -1238,7 +1256,7 @@ export function computeNSPReadiness(profile = {}, scheme = null, documentData = 
   // CHECK 22: Renewal conditions
   if (profile.isRenewal && scheme?.renewalConditions && !documentData.previousYearMarks) {
     hasUnknownRequiredInfo = true;
-    deduct("certificates", 3, risk(
+    items.push(risk(
       "RENEWAL_DOC_MISSING",
       "MEDIUM_ATTENTION",
       "certificates",
@@ -1246,9 +1264,47 @@ export function computeNSPReadiness(profile = {}, scheme = null, documentData = 
       "Renewal mark verification missing",
       `Renewal requires verification of previous year marks and attendance.`,
       "Upload previous year marksheet and attendance certificate for renewal applications.",
-      3,
+      0, // Unknown State Rule: 0 points deduction
       CHECK_TYPES.SCHEME_SPECIFIC_CHECK
     ));
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // CHECK 24 — MANDATORY 2026 SYSTEM COMPLIANCE (NSP OTR & FACE-AUTH)
+  // ════════════════════════════════════════════════════════════════════════════
+  const isCentralOrNsp = schemeJurisdiction === "CENTRAL" || scheme?.portal === "NSP" || schemeState === "All-India";
+  const otrGenerated = profile.otrGenerated ?? documentData.otrGenerated ?? null;
+  const faceAuthDevice = profile.faceAuthDeviceAvailable ?? documentData.faceAuthDeviceAvailable ?? null;
+
+  if (isCentralOrNsp) {
+    if (otrGenerated === false || otrGenerated === null) {
+      hasUnknownRequiredInfo = true;
+      items.push(risk(
+        "NSP_2026_OTR_TRACKER",
+        "MEDIUM_ATTENTION",
+        "application",
+        "otrNumber",
+        "NSP OTR Tracker: Official One-Time Registration (OTR) confirmation required",
+        "NSP OTR Tracker: Please ensure you have generated your official One-Time Registration (OTR) number via the official NSP portal. Face-Authentication must be executed via the official AadhaarFaceRD mobile framework.",
+        "Generate your official 14-digit OTR number on scholarships.gov.in using AadhaarFaceRD before selecting schemes. SGP does not simulate or mock OTR generation.",
+        0, // Unknown State Rule: 0 points deduction
+        CHECK_TYPES.SCHEME_SPECIFIC_CHECK
+      ));
+    }
+    if (faceAuthDevice === false || faceAuthDevice === null) {
+      hasUnknownRequiredInfo = true;
+      items.push(risk(
+        "NSP_2026_FACE_AUTH_DEVICE",
+        "LOW_ATTENTION",
+        "application",
+        "faceAuthDevice",
+        "Aadhaar Face-RD mobile framework availability",
+        "NSP requires Face-Authentication executed via the official AadhaarFaceRD mobile framework on Android/iOS. SGP does not simulate or perform face recognition.",
+        "Ensure access to an Android or iOS smartphone with camera and AadhaarFaceRD app installed.",
+        0, // Unknown State Rule: 0 points deduction
+        CHECK_TYPES.SCHEME_SPECIFIC_CHECK
+      ));
+    }
   }
 
   // ════════════════════════════════════════════════════════════════════════════

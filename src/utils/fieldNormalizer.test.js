@@ -75,6 +75,12 @@ describe("fieldNormalizer", () => {
       expect(normalizeIncome("1,80,000.00")).toBe(180000);
       expect(normalizeIncome("250000")).toBe(250000);
       expect(normalizeIncome(250000)).toBe(250000);
+      // Browser OCR Fault-Tolerance Layer tests
+      expect(normalizeIncome("R. 180000")).toBe(180000);
+      expect(normalizeIncome("Rs. 2,5O,OOO/-")).toBe(250000); // OCR O/o confused with 0
+      expect(normalizeIncome("INR 1,50,000")).toBe(150000);
+      expect(normalizeIncome("Rupees 72000")).toBe(72000);
+      expect(normalizeIncome("₹ 95,000/-")).toBe(95000);
     });
 
     test("returns null for invalid or negative income strings", () => {

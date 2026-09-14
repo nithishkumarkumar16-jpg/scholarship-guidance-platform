@@ -269,7 +269,7 @@ function EligibilityEngine({
                       📋 Information Ready for Eligibility Check
                     </h3>
                     <p style={{ fontSize: "11.5px", color: "#64748b", margin: "2px 0 0 0" }}>
-                      Safe extracted fields from verified documents. You can review or edit any value below before matching.
+                      Safe extracted fields from uploaded documents. You can review or edit any value below before matching.
                     </p>
                   </div>
                   <span style={{ fontSize: "11px", fontWeight: 800, padding: "3px 10px", borderRadius: "20px", background: "#f0fdf4", color: "#166534", border: "1px solid #bbf7d0" }}>
@@ -281,7 +281,7 @@ function EligibilityEngine({
                   <div style={{ background: "#f8fafc", padding: "10px 12px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
                     <div style={{ fontSize: "10.5px", color: "#64748b", fontWeight: 700 }}>Student Full Name</div>
                     <div style={{ fontSize: "12.5px", fontWeight: 800, color: "#0f172a", marginTop: "2px" }}>{form.name || "—"}</div>
-                    <div style={{ fontSize: "10px", color: "#059669", marginTop: "4px", fontWeight: 700 }}>✓ From {fieldMetadata?.name?.source || "verified documents"}</div>
+                    <div style={{ fontSize: "10px", color: "#059669", marginTop: "4px", fontWeight: 700 }}>✓ From {fieldMetadata?.name?.source || "uploaded documents"}</div>
                   </div>
 
                   <div style={{ background: "#f8fafc", padding: "10px 12px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>

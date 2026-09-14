@@ -5,6 +5,12 @@ import {
   detectMarksheetTemplate,
   extractCommunityCertificateData,
   extractIncomeCertificateData,
+  suggestOcrCorrections,
+  validateCalendarDate,
+  normalizeInstitutionName,
+  compareInstitutions,
+  maskSensitiveIdentifier,
+  computeFieldConfidence,
 } from "./fieldParsers";
 
 
@@ -604,6 +610,219 @@ describe("fieldParsers", () => {
       expect(res.school).toBeNull();
       expect(res.dob).toBeNull();
       expect(res.registerNumber).toBeNull();
+    });
+  });
+
+  describe("Critical Fields in 10th and 12th Marksheet Extraction", () => {
+    test("extracts all critical fields: Name, DOB, School, Board, Register/Roll No, Year, Marks, Percentage, Grade, Parents", () => {
+      const text = `
+        GOVERNMENT OF TAMIL NADU
+        DEPARTMENT OF GOVERNMENT EXAMINATIONS
+        SECONDARY SCHOOL LEAVING CERTIFICATE (SSLC)
+        NAME OF THE CANDIDATE: KAVITHA M
+        FATHER'S NAME: MURUGAN S
+        MOTHER'S NAME: LAKSHMI M
+        DATE OF BIRTH: 24/05/2005
+        PERMANENT REGISTER NUMBER: 7654321
+        NAME OF THE SCHOOL: GOVT HIGHER SECONDARY SCHOOL SALEM
+        SESSION: MARCH 2021
+        TOTAL MARKS : 455 / 500
+        TAMIL 092
+        ENGLISH 088
+        MATHEMATICS 095
+        SCIENCE 090
+        SOCIAL SCIENCE 090
+        PASS
+      `;
+      const res = extractMarksheetData(text, "ms10");
+
+      expect(res.name).toBe("Kavitha M");
+      expect(res.fatherName).toBe("Murugan S");
+      expect(res.motherName).toBe("Lakshmi M");
+      expect(res.dob).toBe("24-05-2005");
+      expect(res.school).toContain("GOVT HIGHER SECONDARY SCHOOL SALEM");
+      expect(res.board).toContain("Tamil Nadu");
+      expect(res.registerNumber).toBe("7654321");
+      expect(res.year).toBe("2021");
+      expect(res.month).toBe("March");
+      expect(res.marksScored).toBe("455");
+      expect(res.maxMarks).toBe("500");
+      expect(res.percentage).toBe("91.00%");
+      expect(res.grade).toBe("Pass");
+      expect(res.subjectMarks).toBeDefined();
+      expect(res.subjectMarks.length).toBeGreaterThanOrEqual(4);
+
+      // Verify structuredFields
+      expect(res.structuredFields).toBeDefined();
+      expect(res.structuredFields.name.confidence).toBeGreaterThanOrEqual(90);
+      expect(res.structuredFields.name.status).toBe("high");
+      expect(res.structuredFields.dob.status).toBe("high");
+      expect(res.structuredFields.registerNumber.status).toBe("medium");
+    });
+
+    test("12th marksheet extracts critical elective marks and percentage", () => {
+      const text = `
+        GOVERNMENT OF TAMIL NADU
+        HIGHER SECONDARY COURSE CERTIFICATE (HSC)
+        NAME OF THE CANDIDATE: ANANDHA KUMAR S
+        DATE OF BIRTH: 12/10/2003
+        PERMANENT REGISTER NUMBER: 8812345
+        NAME OF THE SCHOOL: ST JOSEPH HIGHER SECONDARY SCHOOL TRICHY
+        SESSION: MARCH 2021
+        TOTAL MARKS : 540 / 600
+        PASS
+      `;
+      const res = extractMarksheetData(text, "ms12");
+
+      expect(res.name).toBe("Anandha Kumar S");
+      expect(res.dob).toBe("12-10-2003");
+      expect(res.school).toContain("ST JOSEPH HIGHER SECONDARY SCHOOL TRICHY");
+      expect(res.board).toContain("Tamil Nadu Higher Secondary (HSC)");
+      expect(res.registerNumber).toBe("8812345");
+      expect(res.marksScored).toBe("540");
+      expect(res.maxMarks).toBe("600");
+      expect(res.percentage).toBe("90.00%");
+      expect(res.grade).toBe("Pass");
+    });
+  });
+
+  describe("Conservative OCR Error Correction (suggestOcrCorrections)", () => {
+    test("detects digits in names and provides non-destructive suggestions", () => {
+      const res1 = suggestOcrCorrections("N1TH1SH", "name");
+      expect(res1.rawValue).toBe("N1TH1SH");
+      expect(res1.uncertain).toBe(true);
+      expect(res1.possibleCorrections).toContain("NITHISH");
+
+      const res2 = suggestOcrCorrections("KUM4R", "name");
+      expect(res2.possibleCorrections).toContain("KUMAR");
+
+      const res3 = suggestOcrCorrections("S0UNDAR", "name");
+      expect(res3.possibleCorrections).toContain("SOUNDAR");
+    });
+
+    test("suggests corrections for character confusion rn vs m and cl vs d", () => {
+      const res1 = suggestOcrCorrections("KArnan", "name");
+      expect(res1.possibleCorrections).toContain("KArnan".replace(/rn/g, "m"));
+
+      const res2 = suggestOcrCorrections("clhan", "name");
+      expect(res2.possibleCorrections).toContain("dhan");
+    });
+
+    test("handles ambiguous certificate and registration numbers without silent changes", () => {
+      const res1 = suggestOcrCorrections("ABO1238", "id");
+      expect(res1.rawValue).toBe("ABO1238");
+      expect(res1.uncertain).toBe(true);
+      expect(res1.possibleCorrections).toContain("AB01238");
+
+      const res2 = suggestOcrCorrections("TN-l234", "id");
+      expect(res2.possibleCorrections).toContain("TN-1234");
+    });
+
+    test("handles date digit character confusions (O->0, B->8)", () => {
+      const res = suggestOcrCorrections("12/0B/2006", "date");
+      expect(res.uncertain).toBe(true);
+      expect(res.possibleCorrections).toContain("12/08/2006");
+    });
+  });
+
+  describe("Calendar Date Validation (validateCalendarDate)", () => {
+    test("accepts valid calendar dates and identifies components", () => {
+      const d1 = validateCalendarDate("15/08/2004");
+      expect(d1.isValid).toBe(true);
+      expect(d1.day).toBe(15);
+      expect(d1.month).toBe(8);
+      expect(d1.year).toBe(2004);
+
+      // Leap year check: Feb 29 on leap year 2004 is valid
+      const d2 = validateCalendarDate("29-02-2004");
+      expect(d2.isValid).toBe(true);
+    });
+
+    test("rejects invalid days and leap year anomalies", () => {
+      // Feb 29 on non-leap year 2005 is invalid
+      const nonLeap = validateCalendarDate("29-02-2005");
+      expect(nonLeap.isValid).toBe(false);
+      expect(nonLeap.reason).toContain("Invalid day");
+
+      // Feb 30/31 is invalid
+      const feb30 = validateCalendarDate("30/02/2020");
+      expect(feb30.isValid).toBe(false);
+
+      // Month > 12 is invalid
+      const badMonth = validateCalendarDate("12/15/2020");
+      expect(badMonth.isValid).toBe(false);
+
+      // Year out of range
+      const badYear = validateCalendarDate("12/05/1920");
+      expect(badYear.isValid).toBe(false);
+    });
+  });
+
+  describe("Institution Normalization & Fuzzy Matching (compareInstitutions)", () => {
+    test("normalizes abbreviations: HSS, GOVT, MATRIC, ENG, COLL", () => {
+      const norm1 = normalizeInstitutionName("Govt. H.S.S. Salem");
+      expect(norm1).toBe("GOVT HSS SALEM");
+
+      const norm2 = normalizeInstitutionName("Sri Ram Engg. College");
+      expect(norm2).toBe("SRI RAM ENG COLL");
+    });
+
+    test("fuzzy compares institution names with abbreviation equivalence", () => {
+      const res1 = compareInstitutions("Sri Ram Eng College", "Sri Ram Engineering College");
+      expect(res1.isMatch).toBe(true);
+      expect(res1.status).toBe("MATCH");
+
+      const res2 = compareInstitutions("Govt Higher Secondary School", "Govt HSS");
+      expect(res2.isMatch).toBe(true);
+
+      const res3 = compareInstitutions("Delhi Public School", "St Xavier High School");
+      expect(res3.isMatch).toBe(false);
+      expect(res3.status).toBe("DIFFERENT");
+    });
+  });
+
+  describe("Sensitive Identifier Masking (maskSensitiveIdentifier)", () => {
+    test("masks Aadhaar to show only last 4 digits", () => {
+      expect(maskSensitiveIdentifier("1234 5678 9012", "aadhaar")).toBe("XXXX-XXXX-9012");
+      expect(maskSensitiveIdentifier("123456789012", "aadhaar")).toBe("XXXX-XXXX-9012");
+    });
+
+    test("masks Bank Account Number to show only last 4 digits", () => {
+      expect(maskSensitiveIdentifier("987654321012", "bank")).toBe("XXXXXXXX1012");
+    });
+  });
+
+  describe("Deterministic Field Confidence Scoring (computeFieldConfidence)", () => {
+    test("calculates deterministic confidence and assigns proper status band", () => {
+      const high = computeFieldConfidence({
+        engineConfidence: 95,
+        patternStrength: 95,
+        labelProximity: 90,
+        valueValidity: 100,
+      });
+      expect(high.score).toBeGreaterThanOrEqual(90);
+      expect(high.status).toBe("high");
+      expect(high.uncertain).toBe(false);
+
+      const medium = computeFieldConfidence({
+        engineConfidence: 75,
+        patternStrength: 80,
+        labelProximity: 70,
+        valueValidity: 80,
+      });
+      expect(medium.score).toBeGreaterThanOrEqual(70);
+      expect(medium.score).toBeLessThan(90);
+      expect(medium.status).toBe("medium");
+
+      const low = computeFieldConfidence({
+        engineConfidence: 50,
+        patternStrength: 60,
+        labelProximity: 40,
+        valueValidity: 60,
+      });
+      expect(low.score).toBeLessThan(70);
+      expect(low.status).toBe("low");
+      expect(low.uncertain).toBe(true);
     });
   });
 });

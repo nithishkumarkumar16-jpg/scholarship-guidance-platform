@@ -16,7 +16,7 @@ body { font-family: "Segoe UI", sans-serif; background: #f1f5f9; }
   justify-content: space-between;
   align-items: center;
   gap: 20px;
-  padding: 14px 40px;
+  padding: 8px 40px;
   background: #020652;
   color: white;
   box-shadow: 0 4px 20px rgba(22, 47, 118, 0.35);

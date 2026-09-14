@@ -293,3 +293,16 @@
   .action-buttons { flex-direction:column; }
   .btn-massive-primary,.btn-glass-secondary { width:100%;text-align:center; }
 }
+
+/* ── EMBEDDED STEP 4 VIEW ── */
+.eligibility-page.is-embedded-step {
+  min-height: unset;
+  background: transparent;
+  padding: 0;
+  animation: none;
+}
+.eligibility-container.is-embedded-container {
+  padding: 0 !important;
+  max-width: 100% !important;
+}
+

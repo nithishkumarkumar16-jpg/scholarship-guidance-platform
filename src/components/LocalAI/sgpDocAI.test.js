@@ -7,7 +7,7 @@ jest.mock("tesseract.js", () => ({
   createWorker: jest.fn(),
 }));
 
-import { extractMarksheetFields, reconcileMarksheetPasses, getPdfWorkerSrc, MAX_PDF_PAGES } from "./sgpDocAI";
+import { extractMarksheetFields, reconcileMarksheetPasses, getPdfWorkerSrc, getLocalTesseractOptions, MAX_PDF_PAGES } from "./sgpDocAI";
 
 describe("extractMarksheetFields", () => {
   test("rejects boilerplate candidate labels and keeps the real student name", () => {
@@ -93,6 +93,17 @@ describe("pdf security & worker configuration", () => {
     expect(workerSrc).toContain("/pdfjs/pdf.worker.min.mjs");
     expect(workerSrc).not.toContain("/pdfs-dist/build/pdf.worker.min.mjs");
   });
+
+  test("pins all Tesseract runtime assets to this application", () => {
+    const options = getLocalTesseractOptions();
+
+    expect(options.workerPath).toContain("/tesseract/worker.min.js");
+    expect(options.corePath).toContain("/tesseract");
+    expect(options.langPath).toContain("/tessdata");
+    expect(options.gzip).toBe(false);
+    expect(options.cacheMethod).toBe("none");
+    expect(JSON.stringify(options)).not.toMatch(/cdn|https?:/i);
+  });
 });
 
 describe("reconcileMarksheetPasses", () => {
@@ -148,4 +159,38 @@ describe("reconcileMarksheetPasses", () => {
     expect(reconciled.marksScored).toBe("499");
     expect(reconciled.fieldConfidence.name).toBe(0.95);
   });
+
+  test("reconciles fatherName, motherName, rollNumber, and structuredFields across passes", () => {
+    const pass1 = {
+      name: "Sample Student",
+      dob: "15-08-2004",
+      registerNumber: "1234567",
+      rollNumber: "1234567",
+      fieldConfidence: { name: 0.90 },
+      structuredFields: {
+        name: { field: "name", confidence: 90, status: "high" },
+      },
+    };
+
+    const pass2 = {
+      name: "Sample Student",
+      fatherName: "Sample Father",
+      motherName: "Sample Mother",
+      fieldConfidence: { name: 0.92 },
+      structuredFields: {
+        fatherName: { field: "fatherName", confidence: 88, status: "medium" },
+        motherName: { field: "motherName", confidence: 88, status: "medium" },
+      },
+    };
+
+    const reconciled = reconcileMarksheetPasses(pass1, pass2);
+    expect(reconciled.name).toBe("Sample Student");
+    expect(reconciled.fatherName).toBe("Sample Father");
+    expect(reconciled.motherName).toBe("Sample Mother");
+    expect(reconciled.dob).toBe("15-08-2004");
+    expect(reconciled.rollNumber).toBe("1234567");
+    expect(reconciled.structuredFields.fatherName).toBeDefined();
+    expect(reconciled.structuredFields.motherName).toBeDefined();
+  });
 });
+

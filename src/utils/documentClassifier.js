@@ -304,3 +304,219 @@ export function validateDocumentSlot(slot, detection) {
   };
 }
 
+/**
+ * Normalizes title text to resolve common OCR character confusions in document headers.
+ */
+function normalizeOcrTitleText(text) {
+  return String(text || "")
+    .slice(0, 1500) // Focus on header / upper area of document
+    .replace(/[|_]+/g, " ")
+    .replace(/\b0([a-z]+)\b/gi, "O$1")
+    .replace(/\b([a-z]+)0\b/gi, "$1O")
+    .replace(/SEC0NDARY/gi, "SECONDARY")
+    .replace(/SCH00L/gi, "SCHOOL")
+    .replace(/LEAV1NG/gi, "LEAVING")
+    .replace(/CERT1F1CATE/gi, "CERTIFICATE")
+    .replace(/H1GHER/gi, "HIGHER")
+    .replace(/1NC0ME/gi, "INCOME")
+    .replace(/C0MMUN1TY/gi, "COMMUNITY")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export const DOCUMENT_TITLE_PATTERNS = [
+  {
+    type: "ms10",
+    title: "Secondary School Leaving Certificate (10th)",
+    patterns: [
+      /secondary\s*school\s*leaving\s*certificate/i,
+      /s\.?s\.?l\.?c\.?(?:\s+marksheet|\s+mark\s+certificate|\s+examination)?/i,
+      /secondary\s*school\s*examination/i,
+      /high\s*school\s*certificate\s*examination/i,
+      /all\s*india\s*secondary\s*school\s*examination/i,
+      /matriculation\s*examination/i,
+      /10th\s*(?:standard|std|class)?\s*(?:mark\s*sheet|marksheet|certificate)/i,
+      /பத்தாம்\s*வகுப்பு\s*மதிப்பெண்\s*சான்றிதழ்/i,
+    ],
+    weight: 95,
+  },
+  {
+    type: "ms12",
+    title: "Higher Secondary Mark Sheet (12th)",
+    patterns: [
+      /higher\s*secondary(?:\s*course|\s*school|\s*academic)?\s*(?:certificate|examination|mark\s*sheet|statement\s*of\s*marks)/i,
+      /h\.?s\.?c\.?(?:\s+marksheet|\s+mark\s+certificate|\s+examination)?/i,
+      /senior\s*school\s*certificate\s*examination/i,
+      /all\s*india\s*senior\s*school\s*certificate/i,
+      /plus\s*two(?:\s*mark\s*sheet|\s*examination)?/i,
+      /intermediate\s*examination\s*certificate/i,
+      /12th\s*(?:standard|std|class)?\s*(?:mark\s*sheet|marksheet|certificate)/i,
+      /மேல்நிலைப்\s*பள்ளி\s*மதிப்பெண்\s*சான்றிதழ்/i,
+    ],
+    weight: 95,
+  },
+  {
+    type: "community",
+    title: "Community Certificate",
+    patterns: [
+      /community\s*certificate/i,
+      /caste\s*certificate/i,
+      /scheduled\s*caste\s*certificate/i,
+      /scheduled\s*tribe\s*certificate/i,
+      /backward\s*class\s*certificate/i,
+      /சாதிச்\s*சான்றிதழ்|சமூகச்\s*சான்றிதழ்/i,
+    ],
+    weight: 95,
+  },
+  {
+    type: "income",
+    title: "Income Certificate",
+    patterns: [
+      /income\s*certificate/i,
+      /family\s*income\s*certificate/i,
+      /annual\s*income\s*certificate/i,
+      /வருமானச்\s*சான்றிதழ்/i,
+    ],
+    weight: 95,
+  },
+  {
+    type: "unknown",
+    title: "Transfer Certificate",
+    patterns: [
+      /transfer\s*certificate/i,
+      /\bt\.?c\.?\s*certificate/i,
+      /மாற்றுச்\s*சான்றிதழ்/i,
+    ],
+    weight: 88,
+  },
+  {
+    type: "unknown",
+    title: "Bonafide Certificate",
+    patterns: [
+      /bonafide\s*certificate/i,
+      /bonafide\s*student\s*certificate/i,
+      /உண்மைச்\s*சான்றிதழ்/i,
+    ],
+    weight: 88,
+  },
+  {
+    type: "aadhaar",
+    title: "Aadhaar Card",
+    patterns: [
+      /unique\s*identification\s*authority\s*of\s*india/i,
+      /government\s*of\s*india.*aadhaar/i,
+      /मेरा\s*आधार,\s*मेरी\s*पहचान/i,
+    ],
+    weight: 95,
+  },
+  {
+    type: "bankpass",
+    title: "Bank Passbook",
+    patterns: [
+      /bank\s*passbook/i,
+      /passbook\b/i,
+      /account\s*statement/i,
+    ],
+    weight: 90,
+  },
+];
+
+/**
+ * Detects document title and type independently from field extraction.
+ * 
+ * @param {string} rawText OCR text
+ * @returns {Object} { documentType, documentTitle, confidence, isIdentified, evidence }
+ */
+export function detectDocumentTitle(rawText) {
+  const text = String(rawText || "").trim();
+  if (!text || text.length < 10) {
+    return {
+      documentType: "unknown",
+      documentTitle: "Unknown Document",
+      confidence: 0,
+      isIdentified: false,
+      evidence: [],
+    };
+  }
+
+  // 1. Check exact pattern matches in first 1500 characters
+  const headerSlice = text.slice(0, 1500);
+  for (const entry of DOCUMENT_TITLE_PATTERNS) {
+    for (const pat of entry.patterns) {
+      const match = headerSlice.match(pat);
+      if (match) {
+        return {
+          documentType: entry.type,
+          documentTitle: entry.title,
+          confidence: entry.weight,
+          isIdentified: true,
+          evidence: [match[0]],
+        };
+      }
+    }
+  }
+
+  // 2. Check OCR-normalized text for noisy headers (e.g. "SEC0NDARY SCH00L LEAV1NG CERT1F1CATE")
+  const normalizedHeader = normalizeOcrTitleText(headerSlice);
+  for (const entry of DOCUMENT_TITLE_PATTERNS) {
+    for (const pat of entry.patterns) {
+      const match = normalizedHeader.match(pat);
+      if (match) {
+        return {
+          documentType: entry.type,
+          documentTitle: entry.title,
+          confidence: Math.max(60, entry.weight - 10),
+          isIdentified: true,
+          evidence: [`OCR-normalized: ${match[0]}`],
+        };
+      }
+    }
+  }
+
+  // 3. Check for partial / uncertain anchors
+  if (/(?:income|வருமானம்)\b/i.test(headerSlice)) {
+    return {
+      documentType: "unknown",
+      documentTitle: "Possible Income Certificate",
+      confidence: 61,
+      isIdentified: false,
+      evidence: ["Partial income keyword anchor"],
+    };
+  }
+  if (/(?:community|caste|சாதி)\b/i.test(headerSlice)) {
+    return {
+      documentType: "unknown",
+      documentTitle: "Possible Community Certificate",
+      confidence: 61,
+      isIdentified: false,
+      evidence: ["Partial community keyword anchor"],
+    };
+  }
+  if (/(?:sslc|secondary|10th)\b/i.test(headerSlice)) {
+    return {
+      documentType: "unknown",
+      documentTitle: "Possible 10th Marksheet",
+      confidence: 61,
+      isIdentified: false,
+      evidence: ["Partial secondary keyword anchor"],
+    };
+  }
+  if (/(?:hsc|higher\s*secondary|12th)\b/i.test(headerSlice)) {
+    return {
+      documentType: "unknown",
+      documentTitle: "Possible 12th Marksheet",
+      confidence: 61,
+      isIdentified: false,
+      evidence: ["Partial higher secondary keyword anchor"],
+    };
+  }
+
+  return {
+    documentType: "unknown",
+    documentTitle: "Unknown Document",
+    confidence: 15,
+    isIdentified: false,
+    evidence: [],
+  };
+}
+

@@ -45,6 +45,20 @@ if (typeof window !== "undefined" && typeof window.location !== "undefined") {
 
 export const MAX_PDF_PAGES = 3;
 
+// These assets are deliberately served from this application, never a CDN.  Do
+// not remove these paths: Tesseract.js otherwise falls back to remote worker,
+// core, and language-data URLs at runtime.
+export function getLocalTesseractOptions() {
+  return {
+    workerPath: "/tesseract/worker.min.js",
+    corePath: "/tesseract",
+    langPath: "/tessdata",
+    gzip: false,
+    cacheMethod: "none",
+    workerBlobURL: false,
+  };
+}
+
 /**
  * Renders up to 3 PDF pages locally using PDF.js and measures real canvas quality.
  */
@@ -215,9 +229,10 @@ export async function runOCR(file, onProgress, qualityAssessment = null, isMarks
 
     const multiPasses = [];
 
-    // Additional passes for marksheets: compare binarized, sharpened, and original high-res render
-    if (isMarksheet && rawPages.length > 0) {
-      const variantsToRun = ["binarized", "sharpened", "original"];
+    // Additional passes for difficult documents: compare normalized (illumination), binarized, and sharpened
+    const shouldRunMultiPass = isMarksheet || (qualityAssessment && (qualityAssessment.qualityLevel === "fair" || qualityAssessment.qualityLevel === "poor")) || (avgConfidence !== null && avgConfidence < 75);
+    if (shouldRunMultiPass && rawPages.length > 0) {
+      const variantsToRun = ["normalized", "sharpened", "binarized"];
       for (const variant of variantsToRun) {
         try {
           const vPagesText = [];
@@ -321,13 +336,103 @@ export function reconcileMarksheetPasses(...passes) {
     }
   }
 
-  // 4. Register Number, DOB, Year, Month, Board
+  // 4. Register Number, DOB, Year, Month, Board, Father, Mother, Roll No, Subject Marks
   for (const p of flatPasses) {
     if (!out.registerNumber && p.registerNumber) out.registerNumber = p.registerNumber;
+    if (!out.rollNumber && p.rollNumber) out.rollNumber = p.rollNumber;
     if (!out.dob && p.dob) out.dob = p.dob;
     if (!out.year && p.year) out.year = p.year;
     if (!out.month && p.month) out.month = p.month;
     if (!out.board && p.board) out.board = p.board;
+    if (!out.fatherName && p.fatherName) out.fatherName = p.fatherName;
+    if (!out.motherName && p.motherName) out.motherName = p.motherName;
+    if (!out.subjectMarks && p.subjectMarks) out.subjectMarks = p.subjectMarks;
+  }
+
+  // Preserve and update structuredFields
+  out.structuredFields = { ...(base.structuredFields || {}) };
+  for (const p of flatPasses) {
+    if (p.structuredFields) {
+      out.structuredFields = { ...out.structuredFields, ...p.structuredFields };
+    }
+  }
+  if (out.name && out.structuredFields.name) {
+    out.structuredFields.name.rawValue = out.name;
+    out.structuredFields.name.normalizedValue = out.name;
+    out.structuredFields.name.confidence = Math.round((out.fieldConfidence.name || 0.85) * 100);
+  }
+
+  return out;
+}
+
+/**
+ * Reconciles candidate fields from multiple OCR preprocessing passes for Community and Income certificates.
+ */
+export function reconcileCertificatePasses(...passes) {
+  const flatPasses = passes.flat().filter(Boolean);
+  if (!flatPasses.length) return {};
+  if (flatPasses.length === 1) return flatPasses[0];
+
+  const base = flatPasses[0];
+  const out = { ...base };
+  out.fieldConfidence = { ...(base.fieldConfidence || {}) };
+  out.structuredFields = { ...(base.structuredFields || {}) };
+
+  // Candidate Name: reconcile across all passes with cross-pass agreement boost
+  const nameCandidates = [];
+  for (const p of flatPasses) {
+    if (p.name) {
+      nameCandidates.push({
+        name: p.name,
+        confidence: p.fieldConfidence?.name || 0.75,
+      });
+    }
+  }
+
+  if (nameCandidates.length > 0) {
+    const freq = {};
+    for (const c of nameCandidates) {
+      const k = c.name.toLowerCase().replace(/[^a-z]/g, "");
+      freq[k] = (freq[k] || 0) + 1;
+    }
+
+    let bestName = null;
+    let bestScore = -1;
+
+    for (const c of nameCandidates) {
+      const k = c.name.toLowerCase().replace(/[^a-z]/g, "");
+      const agreements = freq[k] || 1;
+      const agreementBoost = agreements >= 2 ? 0.20 : 0;
+      const totalScore = c.confidence + agreementBoost;
+      if (totalScore > bestScore) {
+        bestScore = totalScore;
+        bestName = c.name;
+      }
+    }
+
+    out.name = bestName;
+    out.fieldConfidence.name = Math.min(0.98, Number(bestScore.toFixed(2)));
+    if (out.structuredFields?.name) {
+      out.structuredFields.name.rawValue = bestName;
+      out.structuredFields.name.normalizedValue = bestName;
+      out.structuredFields.name.confidence = Math.round(out.fieldConfidence.name * 100);
+      out.structuredFields.name.status = out.fieldConfidence.name >= 0.85 ? "high" : "medium";
+    }
+  }
+
+  // Merge missing fields from alternative passes
+  for (const p of flatPasses.slice(1)) {
+    for (const key of Object.keys(p)) {
+      if (!out[key] && p[key]) {
+        out[key] = p[key];
+        if (p.fieldConfidence?.[key]) {
+          out.fieldConfidence[key] = p.fieldConfidence[key];
+        }
+        if (p.structuredFields?.[key]) {
+          out.structuredFields[key] = p.structuredFields[key];
+        }
+      }
+    }
   }
 
   return out;
@@ -478,9 +583,23 @@ export async function extractDocumentData(file, slotType, onProgress) {
     }
     extracted = reconcileMarksheetPasses(...passResults);
   } else if (type === "community") {
-    extracted = extractCommunityCertificateData(rawText);
+    const pass1Data = extractCommunityCertificateData(rawText);
+    const passResults = [pass1Data];
+    if (ocrResult.multiPasses && ocrResult.multiPasses.length > 0) {
+      for (const mp of ocrResult.multiPasses) {
+        passResults.push(extractCommunityCertificateData(mp.text || ""));
+      }
+    }
+    extracted = reconcileCertificatePasses(...passResults);
   } else if (type === "income") {
-    extracted = extractIncomeCertificateData(rawText);
+    const pass1Data = extractIncomeCertificateData(rawText);
+    const passResults = [pass1Data];
+    if (ocrResult.multiPasses && ocrResult.multiPasses.length > 0) {
+      for (const mp of ocrResult.multiPasses) {
+        passResults.push(extractIncomeCertificateData(mp.text || ""));
+      }
+    }
+    extracted = reconcileCertificatePasses(...passResults);
   } else {
     // Fallback extraction
     extracted = {

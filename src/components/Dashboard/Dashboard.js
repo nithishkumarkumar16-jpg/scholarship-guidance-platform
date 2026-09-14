@@ -820,6 +820,7 @@ function Dashboard() {
             <ul className="edura-links-list">
               <li><button onClick={() => handleNavigation("/documents")}>• Certificate Verification</button></li>
               <li><button onClick={() => handleNavigation("/eligibility")}>• Scheme Pre-Check</button></li>
+              <li><button onClick={() => handleNavigation("/nsp")}>• Prepare for NSP</button></li>
               <li><button onClick={() => handleNavigation("/readiness")}>• Bank &amp; DBT Mapping</button></li>
               <li><button onClick={() => handleNavigation("/readiness")}>• Readiness Score Pre-Check</button></li>
               <li><button onClick={() => handleNavigation("/documents")}>• Document Error Scanner</button></li>

@@ -5,6 +5,8 @@ import "./DocumentUpload.css";
 import { extractDocumentData } from "../LocalAI/sgpDocAI";
 import { buildCrossDocumentMatrix } from "../../utils/verificationEngine";
 import { SUPPORTED_DOC_TYPES } from "../../utils/documentClassifier";
+import EligibilityEngine from "../EligibilityEngine/EligibilityEngine";
+import { adaptDocumentsToEligibilityProfile } from "../../adapters/profileAdapter";
 
 const I = {
   Shield:    () => <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3L4 7v5c0 5.25 3.5 10.15 8 11.35C16.5 22.15 20 17.25 20 12V7L12 3z"/><polyline points="9 12 11 14 15 10"/></svg>,
@@ -39,38 +41,175 @@ const DCFG = {
   income:    { label: "Income Certificate",    Icon: I.Banknote,  desc: "Must be within 6-12 months. Freshness verified locally.", color: "blue"   },
 };
 
-const EF = {
-  ms10:      ["name", "board", "school", "year", "month", "registerNumber", "marksScored", "maxMarks", "percentage", "grade"],
-  ms12:      ["name", "board", "school", "year", "month", "registerNumber", "marksScored", "maxMarks", "percentage", "grade"],
-  community: ["name", "fatherName", "communityCategory", "community", "certNumber", "issueDate", "taluk", "district", "issuingAuthority"],
-  income:    ["name", "fatherName", "income", "certNumber", "issueDate", "validUpto", "taluk", "district", "issuingAuthority"],
+export const DOC_FIELD_DEFINITIONS = {
+  ms10: [
+    { id: "name", label: "STUDENT / APPLICANT NAME", keys: ["name", "studentName", "applicantName", "candidateName"] },
+    { id: "fatherName", label: "PARENT / GUARDIAN NAME", keys: ["fatherName", "parentName", "guardianName", "motherName"] },
+    { id: "dob", label: "DATE OF BIRTH", keys: ["dob", "dateOfBirth"] },
+    { id: "board", label: "BOARD / EXAMINING BODY", keys: ["board", "examiningBody"] },
+    { id: "school", label: "SCHOOL / INSTITUTION", keys: ["school", "institution", "schoolName"] },
+    { id: "registerNumber", label: "REGISTRATION / ROLL NO", keys: ["registerNumber", "rollNumber", "regNo"] },
+    { id: "year", label: "PASSING YEAR", keys: ["year", "passingYear"] },
+    { id: "month", label: "EXAM MONTH", keys: ["month", "examMonth"] },
+    { id: "subjectMarks", label: "SUBJECT-WISE MARKS", keys: ["subjectMarks", "subjectWiseMarks", "subjects"] },
+    { id: "marksScored", label: "MARKS SCORED", keys: ["marksScored", "obtainedMarks", "marks"] },
+    { id: "maxMarks", label: "MAXIMUM MARKS", keys: ["maxMarks", "totalMaxMarks"] },
+    { id: "percentage", label: "PERCENTAGE", keys: ["percentage"] },
+    { id: "grade", label: "GRADE / RESULT", keys: ["grade", "result"] },
+  ],
+  ms12: [
+    { id: "name", label: "STUDENT / APPLICANT NAME", keys: ["name", "studentName", "applicantName", "candidateName"] },
+    { id: "fatherName", label: "PARENT / GUARDIAN NAME", keys: ["fatherName", "parentName", "guardianName", "motherName"] },
+    { id: "dob", label: "DATE OF BIRTH", keys: ["dob", "dateOfBirth"] },
+    { id: "board", label: "BOARD / EXAMINING BODY", keys: ["board", "examiningBody"] },
+    { id: "school", label: "SCHOOL / INSTITUTION", keys: ["school", "institution", "schoolName"] },
+    { id: "stream", label: "STREAM / GROUP", keys: ["stream", "group"] },
+    { id: "registerNumber", label: "REGISTRATION / ROLL NO", keys: ["registerNumber", "rollNumber", "regNo"] },
+    { id: "year", label: "PASSING YEAR", keys: ["year", "passingYear"] },
+    { id: "month", label: "EXAM MONTH", keys: ["month", "examMonth"] },
+    { id: "subjectMarks", label: "SUBJECT-WISE MARKS", keys: ["subjectMarks", "subjectWiseMarks", "subjects"] },
+    { id: "marksScored", label: "MARKS SCORED", keys: ["marksScored", "obtainedMarks", "marks"] },
+    { id: "maxMarks", label: "MAXIMUM MARKS", keys: ["maxMarks", "totalMaxMarks"] },
+    { id: "percentage", label: "PERCENTAGE", keys: ["percentage"] },
+    { id: "grade", label: "GRADE / RESULT", keys: ["grade", "result"] },
+  ],
+  income: [
+    { id: "name", label: "APPLICANT NAME", keys: ["name", "applicantName", "candidateName", "studentName"] },
+    { id: "fatherName", label: "FATHER'S / GUARDIAN NAME", keys: ["fatherName", "guardianName", "parentName"] },
+    { id: "dob", label: "DATE OF BIRTH", keys: ["dob", "dateOfBirth"] },
+    { id: "income", label: "ANNUAL INCOME", keys: ["income", "annualIncome", "incomeNumber"] },
+    { id: "incomeWords", label: "INCOME IN WORDS", keys: ["incomeWords", "incomeInWords"] },
+    { id: "incomeYear", label: "INCOME YEAR", keys: ["incomeYear", "financialYear", "year"] },
+    { id: "certNumber", label: "CERTIFICATE NO.", keys: ["certNumber", "certificateNo"] },
+    { id: "applicationNumber", label: "APPLICATION NO.", keys: ["applicationNumber", "applicationNo", "appNo"] },
+    { id: "issueDate", label: "ISSUE DATE", keys: ["issueDate", "dateOfIssue"] },
+    { id: "validFrom", label: "VALID FROM", keys: ["validFrom"] },
+    { id: "validUpto", label: "VALID UNTIL", keys: ["validUpto", "validUntil", "validTill", "expiryDate"] },
+    { id: "occupation", label: "OCCUPATION / SOURCE OF INCOME", keys: ["occupation", "sourceOfIncome"] },
+    { id: "taluk", label: "TALUK", keys: ["taluk"] },
+    { id: "district", label: "DISTRICT", keys: ["district"] },
+    { id: "state", label: "STATE", keys: ["state"] },
+    { id: "issuingAuthority", label: "ISSUING AUTHORITY", keys: ["issuingAuthority", "authority"] },
+  ],
+  community: [
+    { id: "name", label: "STUDENT / APPLICANT NAME", keys: ["name", "applicantName", "candidateName", "studentName"] },
+    { id: "fatherName", label: "FATHER'S / GUARDIAN NAME", keys: ["fatherName", "guardianName", "parentName"] },
+    { id: "dob", label: "DATE OF BIRTH", keys: ["dob", "dateOfBirth"] },
+    { id: "gender", label: "GENDER", keys: ["gender", "sex"] },
+    { id: "community", label: "COMMUNITY / CASTE", keys: ["community", "caste"] },
+    { id: "communityCategory", label: "CATEGORY", keys: ["communityCategory", "category"] },
+    { id: "certNumber", label: "CERTIFICATE NO.", keys: ["certNumber", "certificateNo"] },
+    { id: "applicationNumber", label: "APPLICATION NO.", keys: ["applicationNumber", "applicationNo", "appNo"] },
+    { id: "issueDate", label: "ISSUE DATE", keys: ["issueDate", "dateOfIssue"] },
+    { id: "validFrom", label: "VALID FROM", keys: ["validFrom"] },
+    { id: "validUpto", label: "VALID UNTIL", keys: ["validUpto", "validUntil", "validTill", "expiryDate"] },
+    { id: "taluk", label: "TALUK", keys: ["taluk"] },
+    { id: "district", label: "DISTRICT", keys: ["district"] },
+    { id: "state", label: "STATE", keys: ["state"] },
+    { id: "issuingAuthority", label: "ISSUING AUTHORITY", keys: ["issuingAuthority", "authority"] },
+  ],
 };
 
-const FL = {
-  name: "Student / Applicant Name",
-  fatherName: "Father's / Guardian Name",
-  dob: "Date of Birth",
-  board: "Board / Examining Body",
-  school: "School / Institution",
-  year: "Passing Year",
-  month: "Month",
-  registerNumber: "Register / Roll No",
-  marksScored: "Marks Scored",
-  maxMarks: "Max Marks",
-  marks: "Marks (Scored / Max)",
-  percentage: "Percentage",
-  grade: "Result / Grade",
-  community: "Community (Caste)",
-  communityCategory: "Category",
-  certNumber: "Certificate No.",
-  issueDate: "Issue Date",
-  validUpto: "Valid Upto",
-  taluk: "Taluk",
-  district: "District",
-  state: "State",
-  issuingAuthority: "Issuing Authority",
-  income: "Annual Family Income",
+export const EF = {
+  ms10: DOC_FIELD_DEFINITIONS.ms10.map(f => f.id),
+  ms12: DOC_FIELD_DEFINITIONS.ms12.map(f => f.id),
+  community: DOC_FIELD_DEFINITIONS.community.map(f => f.id),
+  income: DOC_FIELD_DEFINITIONS.income.map(f => f.id),
 };
+
+export const FL = {
+  name: "STUDENT / APPLICANT NAME",
+  fatherName: "PARENT / GUARDIAN NAME",
+  dob: "DATE OF BIRTH",
+  board: "BOARD / EXAMINING BODY",
+  school: "SCHOOL / INSTITUTION",
+  stream: "STREAM / GROUP",
+  year: "PASSING YEAR",
+  month: "EXAM MONTH",
+  registerNumber: "REGISTRATION / ROLL NO",
+  marksScored: "MARKS SCORED",
+  maxMarks: "MAXIMUM MARKS",
+  marks: "MARKS (SCORED / MAX)",
+  percentage: "PERCENTAGE",
+  grade: "GRADE / RESULT",
+  subjectMarks: "SUBJECT-WISE MARKS",
+  community: "COMMUNITY / CASTE",
+  communityCategory: "CATEGORY",
+  certNumber: "CERTIFICATE NO.",
+  applicationNumber: "APPLICATION NO.",
+  issueDate: "ISSUE DATE",
+  validFrom: "VALID FROM",
+  validUpto: "VALID UNTIL",
+  occupation: "OCCUPATION / SOURCE OF INCOME",
+  incomeWords: "INCOME IN WORDS",
+  incomeYear: "INCOME YEAR",
+  taluk: "TALUK",
+  district: "DISTRICT",
+  state: "STATE",
+  issuingAuthority: "ISSUING AUTHORITY",
+  income: "ANNUAL INCOME",
+  gender: "GENDER",
+};
+
+function formatExtractedDisplayValue(fieldId, val) {
+  if (val === null || val === undefined || val === "") return null;
+  if (Array.isArray(val)) {
+    if (val.length === 0) return null;
+    return val
+      .map(item => {
+        if (typeof item === "object" && item !== null) {
+          if (item.subject && (item.marks !== undefined || item.marksScored !== undefined)) {
+            return `${item.subject}: ${item.marks ?? item.marksScored}`;
+          }
+          return Object.entries(item).map(([k, v]) => `${k}: ${v}`).join(", ");
+        }
+        return String(item);
+      })
+      .join(" • ");
+  }
+  if (typeof val === "object") {
+    return JSON.stringify(val);
+  }
+  if (typeof val === "boolean") {
+    return val ? "Yes" : "No";
+  }
+  if (fieldId === "income" && typeof val === "number") {
+    return `₹${val.toLocaleString("en-IN")}`;
+  }
+  return String(val);
+}
+
+function resolveExtractedFieldScore(fieldDef, ext, data) {
+  for (const k of fieldDef.keys) {
+    const sfConf = ext?.structuredFields?.[k]?.confidence;
+    if (typeof sfConf === "number" && sfConf > 0) {
+      return sfConf <= 1 ? Math.round(sfConf * 100) : Math.round(sfConf);
+    }
+  }
+  for (const k of fieldDef.keys) {
+    const fc = data?.fieldConfidences?.[k] ?? ext?.fieldConfidence?.[k];
+    if (typeof fc === "number" && fc > 0) {
+      return fc <= 1 ? Math.round(fc * 100) : Math.round(fc);
+    }
+  }
+  if (["marksScored", "maxMarks", "percentage", "grade"].includes(fieldDef.id)) {
+    const mConf = data?.fieldConfidences?.marks ?? ext?.fieldConfidence?.marks;
+    if (typeof mConf === "number" && mConf > 0) {
+      return mConf <= 1 ? Math.round(mConf * 100) : Math.round(mConf);
+    }
+  }
+  if (fieldDef.id === "community" || fieldDef.id === "communityCategory") {
+    const cConf = data?.fieldConfidences?.community ?? ext?.fieldConfidence?.community;
+    if (typeof cConf === "number" && cConf > 0) {
+      return cConf <= 1 ? Math.round(cConf * 100) : Math.round(cConf);
+    }
+  }
+  const legacyScore = data?.fieldConfidences?.[fieldDef.id];
+  if (typeof legacyScore === "number" && legacyScore > 0) {
+    return legacyScore <= 1 ? Math.round(legacyScore * 100) : Math.round(legacyScore);
+  }
+  return null;
+}
 
 const btnColor = c => ({ blue: "#2563eb", green: "#059669", purple: "#7c3aed", orange: "#d97706", red: "#dc2626" }[c] || "#2563eb");
 
@@ -78,13 +217,14 @@ function pairScoreLabel(s) {
   if (s === "EXACT_MATCH")      return "✅ Exact Match";
   if (s === "LIKELY_MATCH")     return "✅ Likely Match";
   if (s === "MINOR_DIFFERENCE") return "⚠️ Minor Diff";
+  if (s === "NEEDS_REVIEW")     return "⚠️ Needs Review";
   if (s === "MISMATCH")         return "❌ Mismatch";
   return "— Missing";
 }
 
 function getScoreBadgeInlineStyle(s) {
   if (s === "EXACT_MATCH" || s === "LIKELY_MATCH" || s === "MATCH") return { background: "#f0fdf4", color: "#059669", border: "1px solid #6ee7b7" };
-  if (s === "MINOR_DIFFERENCE" || s === "WARNING") return { background: "#fffbeb", color: "#d97706", border: "1px solid #fde68a" };
+  if (s === "MINOR_DIFFERENCE" || s === "WARNING" || s === "NEEDS_REVIEW") return { background: "#fffbeb", color: "#d97706", border: "1px solid #fde68a" };
   if (s === "MISMATCH" || s === "EXPIRED")         return { background: "#fef2f2", color: "#dc2626", border: "1px solid #fca5a5" };
   return { background: "#f8fafc", color: "#94a3b8", border: "1px solid #e2e8f0" };
 }
@@ -123,6 +263,16 @@ function VerificationReport({ matrixData, aadharName, aadharDob, bankHolder, ban
           <strong>Document Consistency Notice:</strong> SGP checks information consistency using the uploaded documents and student inputs. It does not authenticate documents against official government databases (UIDAI, NPCI, NSP, UMIS). Official verification must be completed on the government portal.
         </div>
       </div>
+
+      {/* Feature 1: Parent-Income Flow Notice */}
+      {matrixData.incomeApplicant === "parent" && (
+        <div style={{ background: "#fffbeb", border: "1.5px solid #fde68a", borderRadius: "10px", padding: "12px 16px", marginBottom: "18px", fontSize: "12px", color: "#92400e", display: "flex", alignItems: "flex-start", gap: "10px" }}>
+          <span style={{ fontSize: "16px" }}>⚠️</span>
+          <div>
+            <strong>Parent Declared as Income Applicant:</strong> Income Certificate verification is operating in parental mode. Student-parent identity comparison is flagged for manual relationship verification instead of raising a hard mismatch failure.
+          </div>
+        </div>
+      )}
 
       {/* Pre-Submission Consistency Score Banner */}
       <div style={{ background: "linear-gradient(135deg,#0f172a,#1e293b)", color: "white", borderRadius: "12px", padding: "18px 24px", marginBottom: "20px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "16px" }}>
@@ -288,11 +438,11 @@ function VerificationReport({ matrixData, aadharName, aadharDob, bankHolder, ban
 
 const initDS = () => Object.fromEntries(Object.keys(DCFG).map(t => [t, { file: null, url: null, loading: false, data: null, err: null, open: true }]));
 
-export default function DocumentUpload() {
+export default function DocumentUpload({ initialDs = null, initialStep = 1 } = {}) {
   const navigate = useNavigate();
   const [isExiting, setIsExiting] = useState(false);
-  const [step, setStep] = useState(1);
-  const [ds, setDs] = useState(initDS);
+  const [step, setStep] = useState(initialStep);
+  const [ds, setDs] = useState(() => initialDs || initDS());
 
   const [aadharName, setAadharName] = useState("");
   const [aadharDob, setAadharDob] = useState("");
@@ -300,15 +450,19 @@ export default function DocumentUpload() {
   const [bankHolder, setBankHolder] = useState("");
   const [studentIncome, setStudentIncome] = useState("");
   const [studentCategory, setStudentCategory] = useState("");
+  const [incomeApplicant, setIncomeApplicant] = useState("student");
+  const [quotaType, setQuotaType] = useState("government");
+  const [firstGraduate, setFirstGraduate] = useState(null);
   const [detailsErrs, setDetailsErrs] = useState({});
 
   const [matrixData, setMatrixData] = useState(null);
+  const [eligibilityData, setEligibilityData] = useState(null);
 
   // Cleanup object URLs on unmount
   useEffect(() => {
     return () => {
       Object.values(ds).forEach(item => {
-        if (item.url) URL.revokeObjectURL(item.url);
+        if (item.url && typeof URL.revokeObjectURL === "function") URL.revokeObjectURL(item.url);
       });
     };
   }, [ds]);
@@ -350,17 +504,23 @@ export default function DocumentUpload() {
       const localResult = await extractDocumentData(ds[type].file, type);
       if (!localResult.success) throw new Error(localResult.error || "Document extraction failed");
 
+      if (type === "community" && localResult.extracted?.quotaType) {
+        setQuotaType(localResult.extracted.quotaType);
+      }
+
       setDs(p => ({ ...p, [type]: { ...p[type], data: localResult, loading: false, open: true } }));
     } catch (e) {
       setDs(p => ({ ...p, [type]: { ...p[type], loading: false, err: e.message || "Analysis failed" } }));
     }
   };
 
-  const buildResults = () => {
+  const buildResults = (overrideApplicant) => {
     const tenthData = ds.ms10.data?.extracted || null;
     const twelfthData = ds.ms12.data?.extracted || null;
     const communityData = ds.community.data?.extracted || null;
     const incomeData = ds.income.data?.extracted || null;
+
+    const applicant = overrideApplicant !== undefined ? overrideApplicant : incomeApplicant;
 
     const matrix = buildCrossDocumentMatrix({
       aadharName,
@@ -373,6 +533,7 @@ export default function DocumentUpload() {
       incomeData,
       studentIncome,
       studentCategory,
+      incomeApplicant: applicant,
     });
 
     setMatrixData(matrix);
@@ -396,10 +557,30 @@ export default function DocumentUpload() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  const proceedToEligibility = () => {
+    buildResults();
+    const adapted = adaptDocumentsToEligibilityProfile({
+      ds,
+      aadharName,
+      aadharDob,
+      studentCategory,
+      studentIncome,
+      bankHolder,
+      bankAccType,
+      matrixData,
+      incomeApplicant,
+      quotaType,
+      firstGraduate,
+    });
+    setEligibilityData(adapted);
+    setStep(4);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   const renderExtracted = (type) => {
     const s = ds[type];
     const cfg = DCFG[type];
-    const fields = EF[type] || [];
+    const fieldDefs = DOC_FIELD_DEFINITIONS[type] || [];
     const ext = s.data?.extracted || {};
     const slotVal = s.data?.slotValidation || {};
     const quality = s.data?.quality || {};
@@ -441,42 +622,48 @@ export default function DocumentUpload() {
               </div>
             )}
 
-            {/* Quality, OCR Confidence & State-Agnostic Strip */}
-            <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px", marginBottom: 10, display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 12px", fontSize: 11 }}>
-              <div>
-                <span style={{ color: "#64748b" }}>Document Type: </span>
-                <strong style={{ color: "#0f172a" }}>{s.data?.detectedType ? (SUPPORTED_DOC_TYPES[s.data.detectedType]?.label || s.data.detectedType) : cfg.label}</strong>
+            {/* Quality, OCR Confidence & State-Agnostic Strip (Compact Standardized Metadata Grid) */}
+            <div className="doc-audit-metadata-grid">
+              <div className="metadata-item">
+                <span className="metadata-label">Document Type</span>
+                <span className="metadata-value">
+                  {s.data?.detectedType ? (SUPPORTED_DOC_TYPES[s.data.detectedType]?.label || s.data.detectedType) : cfg.label}
+                </span>
               </div>
-              <div>
-                <span style={{ color: "#64748b" }}>State: </span>
-                <strong style={{ color: stateVal ? "#0369a1" : "#64748b" }}>{stateVal || "State not determined"}</strong>
+              <div className="metadata-item">
+                <span className="metadata-label">State</span>
+                <span className="metadata-value" style={{ color: stateVal ? "#0369a1" : "#64748b" }}>
+                  {stateVal || "State not determined"}
+                </span>
               </div>
-              <div>
-                <span style={{ color: "#64748b" }}>Authority: </span>
-                <strong style={{ color: authVal ? "#4338ca" : "#64748b" }}>{authVal || "Authority not determined"}</strong>
+              <div className="metadata-item">
+                <span className="metadata-label">Authority</span>
+                <span className="metadata-value" style={{ color: authVal ? "#4338ca" : "#64748b" }}>
+                  {authVal || "Authority not determined"}
+                </span>
               </div>
-              <div>
-                <span style={{ color: "#64748b" }}>Quality: </span>
-                <strong style={{ color: qualityLvl === "GOOD" ? "#16a34a" : qualityLvl === "FAIR" ? "#ca8a04" : qualityLvl === "POOR" ? "#dc2626" : "#64748b" }}>
+              <div className="metadata-item">
+                <span className="metadata-label">Quality</span>
+                <span className="metadata-value" style={{ color: qualityLvl === "GOOD" ? "#16a34a" : qualityLvl === "FAIR" ? "#ca8a04" : qualityLvl === "POOR" ? "#dc2626" : "#64748b" }}>
                   {qualityLvl}
-                </strong>
+                </span>
               </div>
-              <div>
-                <span style={{ color: "#64748b" }}>OCR Confidence: </span>
-                <strong style={{ color: "#0f172a" }}>
+              <div className="metadata-item">
+                <span className="metadata-label">OCR Confidence</span>
+                <span className="metadata-value">
                   {ocrConfText}
                   {s.data?.fieldConfidence ? (
                     <span style={{ fontWeight: 600, fontSize: 10, color: "#0284c7", marginLeft: 4 }}>
                       (Field Match: {s.data.fieldConfidence}%)
                     </span>
                   ) : null}
-                </strong>
+                </span>
               </div>
-              <div>
-                <span style={{ color: "#64748b" }}>Status: </span>
-                <strong style={{ color: s.data?.issues?.length > 0 ? "#dc2626" : (s.data?.warnings?.length > 0 ? "#d97706" : "#16a34a") }}>
+              <div className="metadata-item">
+                <span className="metadata-label">Status</span>
+                <span className="metadata-value" style={{ color: s.data?.issues?.length > 0 ? "#dc2626" : (s.data?.warnings?.length > 0 ? "#d97706" : "#16a34a") }}>
                   {statusText}
-                </strong>
+                </span>
               </div>
             </div>
 
@@ -517,32 +704,59 @@ export default function DocumentUpload() {
               </div>
             )}
 
-            {/* Fields List */}
-            {fields.map(key => {
-              const val = ext[key];
-              if (!val) return null;
-              const fieldScore = s.data?.fieldConfidences?.[key];
-              return (
-                <div key={key} className="ex-row-r">
-                  <span className="ex-k-r">{FL[key] || key}</span>
-                  <span className="ex-v-r" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                    <span>{String(val)}</span>
-                    {typeof fieldScore === "number" && fieldScore > 0 ? (
-                      <span style={{ fontSize: 9.5, padding: "2px 6px", borderRadius: 4, background: fieldScore >= 0.85 ? "#dcfce7" : "#fef9c3", color: fieldScore >= 0.85 ? "#166534" : "#854d0e", fontWeight: 700 }}>
-                        {Math.round(fieldScore * 100)}% match
-                      </span>
-                    ) : null}
-                  </span>
-                </div>
-              );
-            })}
+            {/* Standardized Extracted Fields List */}
+            <div className="extracted-fields-list">
+              {fieldDefs.map(fieldDef => {
+                let rawVal = null;
+                for (const k of fieldDef.keys) {
+                  if (ext[k] !== undefined && ext[k] !== null && ext[k] !== "") {
+                    rawVal = ext[k];
+                    break;
+                  }
+                }
+                if (rawVal === null && fieldDef.id === "state" && s.data?.state) {
+                  rawVal = s.data.state;
+                }
+                if (rawVal === null && fieldDef.id === "issuingAuthority" && s.data?.issuingAuthority) {
+                  rawVal = s.data.issuingAuthority;
+                }
+
+                const displayVal = formatExtractedDisplayValue(fieldDef.id, rawVal);
+                if (!displayVal) return null;
+
+                const matchScore = resolveExtractedFieldScore(fieldDef, ext, s.data);
+
+                return (
+                  <div key={fieldDef.id} className="extracted-field-row ex-row-r">
+                    <div className="extracted-field-label ex-k-r">
+                      {fieldDef.label}
+                    </div>
+                    <div className="extracted-field-value ex-v-r">
+                      <div className="value extracted-val-text">
+                        {displayVal}
+                      </div>
+                      {typeof matchScore === "number" && matchScore > 0 ? (
+                        <span className={`match-badge ${matchScore >= 85 ? "match-high" : "match-med"}`}>
+                          {matchScore}% match
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>
     );
   };
 
-  const STEPS = [{ n: 1, label: "Upload & Extract" }, { n: 2, label: "Enter Identity Details" }, { n: 3, label: "Consistency Results" }];
+  const STEPS = [
+    { n: 1, label: "Upload & Extract" },
+    { n: 2, label: "Enter Identity Details" },
+    { n: 3, label: "Consistency Results" },
+    { n: 4, label: "Eligibility & Scholarship Matches" },
+  ];
 
   const inputStyle = (hasErr) => ({
     width: "100%", padding: "10px 14px", borderRadius: 10, fontSize: 13, fontWeight: 600,
@@ -585,7 +799,12 @@ export default function DocumentUpload() {
             {i > 0 && <div className="step-sep">{">"}</div>}
             <div
               className={"step-item" + (step === s.n ? " active" : step > s.n ? " done" : "")}
-              onClick={() => { if (s.n === 1) setStep(1); else if (s.n === 2 && step >= 2) setStep(2); else if (s.n === 3 && step >= 3) { buildResults(); setStep(3); } }}
+              onClick={() => {
+                if (s.n === 1) setStep(1);
+                else if (s.n === 2 && step >= 2) setStep(2);
+                else if (s.n === 3 && step >= 3) { buildResults(); setStep(3); }
+                else if (s.n === 4 && step >= 3) { proceedToEligibility(); }
+              }}
             >
               <div className="step-circle">{step > s.n ? "✓" : s.n}</div>
               <div className="step-label">{s.label}</div>
@@ -756,6 +975,101 @@ export default function DocumentUpload() {
               </div>
             </div>
 
+            {/* Welfare & Admission Category Settings */}
+            <div className="nsp-card" style={{ marginBottom: 20 }}>
+              <div className="nsp-card-hd" style={{ display: "flex", alignItems: "center", gap: 10, borderBottom: "1.5px solid #e2e8f0", paddingBottom: 12, marginBottom: 16 }}>
+                <span style={{ fontSize: 18 }}>⚙️</span>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 900, color: "#0f172a" }}>Welfare &amp; Admission Category Settings</div>
+                  <div style={{ fontSize: 11, color: "#64748b", marginTop: 1 }}>Configure parental income flow, quota type, and first graduate concessions</div>
+                </div>
+              </div>
+
+              <div className="nsp-fg2">
+                {/* Feature 1: Income Applicant Flow */}
+                <div className="nsp-f">
+                  <label style={labelStyle}>Who is applying for income verification?</label>
+                  <div style={{ display: "flex", gap: 16, marginTop: 6 }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer", color: "#334155" }}>
+                      <input
+                        type="radio"
+                        name="incomeApplicant"
+                        value="student"
+                        checked={incomeApplicant === "student"}
+                        onChange={() => setIncomeApplicant("student")}
+                      />
+                      Student (Me)
+                    </label>
+                    <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer", color: "#334155" }}>
+                      <input
+                        type="radio"
+                        name="incomeApplicant"
+                        value="parent"
+                        checked={incomeApplicant === "parent"}
+                        onChange={() => setIncomeApplicant("parent")}
+                      />
+                      Parent / Guardian
+                    </label>
+                  </div>
+                  <span style={hintStyle}>Select 'Parent / Guardian' if Income Certificate is issued in parent's name</span>
+                </div>
+
+                {/* Feature 2: Admission Quota */}
+                <div className="nsp-f">
+                  <label style={labelStyle}>Admission Quota (for BC / MBC Schemes)</label>
+                  <select
+                    value={quotaType}
+                    onChange={e => setQuotaType(e.target.value)}
+                    style={inputStyle(false)}
+                  >
+                    <option value="government">Government Quota (Single Window Counselling)</option>
+                    <option value="management">Management Quota (Self-Financing)</option>
+                  </select>
+                  <span style={hintStyle}>Tamil Nadu Post-Matric BC/MBC schemes require Government Quota admission</span>
+                </div>
+
+                {/* Feature 3: First Graduate Flag */}
+                <div className="nsp-f" style={{ gridColumn: "1/-1", marginTop: 6 }}>
+                  <label style={labelStyle}>Are you the first graduate in your family?</label>
+                  <div style={{ display: "flex", gap: 20, marginTop: 6 }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer", color: "#334155" }}>
+                      <input
+                        type="radio"
+                        name="firstGraduate"
+                        value="yes"
+                        checked={firstGraduate === true}
+                        onChange={() => setFirstGraduate(true)}
+                      />
+                      Yes
+                    </label>
+                    <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer", color: "#334155" }}>
+                      <input
+                        type="radio"
+                        name="firstGraduate"
+                        value="no"
+                        checked={firstGraduate === false}
+                        onChange={() => setFirstGraduate(false)}
+                      />
+                      No
+                    </label>
+                    <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer", color: "#334155" }}>
+                      <input
+                        type="radio"
+                        name="firstGraduate"
+                        value="not_sure"
+                        checked={firstGraduate === null}
+                        onChange={() => setFirstGraduate(null)}
+                      />
+                      Not sure
+                    </label>
+                  </div>
+                  <span style={hintStyle}>
+                    Select Yes if you are the first graduate in your family, according to the applicable scholarship/concession rules. Helps match applicable Tamil Nadu First Graduate Tuition Fee Concession schemes.
+                  </span>
+                </div>
+              </div>
+            </div>
+
             <div className="bottom-actions" style={{ justifyContent: "space-between" }}>
               <button className="btn-ghost-sm" onClick={() => setStep(1)} style={{ display: "flex", alignItems: "center", gap: 5 }}><I.Back /> Back to Upload</button>
               <button className="btn-massive-primary" onClick={validateDetailsAndProceed} style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -784,6 +1098,37 @@ export default function DocumentUpload() {
               <p>All document names, DOBs, incomes, and categories compared across every source.</p>
             </div>
 
+            {/* Welfare & Admission Overrides in Step 3 */}
+            <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: "12px 18px", marginBottom: 20, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", fontSize: 12 }}>
+                <div>
+                  <span style={{ color: "#64748b", fontWeight: 700 }}>Income Mode: </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = incomeApplicant === "parent" ? "student" : "parent";
+                      setIncomeApplicant(next);
+                      buildResults(next);
+                    }}
+                    style={{ background: incomeApplicant === "parent" ? "#fef3c7" : "#e0e7ff", color: incomeApplicant === "parent" ? "#92400e" : "#3730a3", border: "none", borderRadius: 4, padding: "2px 8px", fontWeight: 800, cursor: "pointer", marginLeft: 4 }}
+                  >
+                    {incomeApplicant === "parent" ? "👨‍👧 Parent Mode" : "🎓 Student Mode"} (Toggle)
+                  </button>
+                </div>
+                <div>
+                  <span style={{ color: "#64748b", fontWeight: 700 }}>Quota: </span>
+                  <strong style={{ color: quotaType === "management" ? "#dc2626" : "#166534" }}>
+                    {quotaType === "management" ? "Management Quota" : "Government Quota"}
+                  </strong>
+                </div>
+                <div>
+                  <span style={{ color: "#64748b", fontWeight: 700 }}>First Graduate in Family: </span>
+                  <strong>{firstGraduate === true ? "✅ Yes" : firstGraduate === false ? "No" : "Not sure"}</strong>
+                </div>
+              </div>
+              <button className="btn-ghost-sm" onClick={() => setStep(2)} style={{ fontSize: 11 }}>Edit in Step 2</button>
+            </div>
+
             <VerificationReport
               matrixData={matrixData}
               aadharName={aadharName}
@@ -794,14 +1139,82 @@ export default function DocumentUpload() {
               studentCategory={studentCategory}
             />
 
-            <div style={{ display: "flex", justifyContent: "center", gap: 12, marginTop: 24, flexWrap: "wrap" }}>
-              <button onClick={() => nav("/eligibility")} style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 28px", background: "linear-gradient(135deg,#6d28d9,#4c119e)", color: "white", border: "none", borderRadius: "50px", fontWeight: 800, fontSize: 14, cursor: "pointer", boxShadow: "0 8px 20px rgba(109,40,217,0.35)" }}>
-                <I.Target /> Check Potentially Matching Scholarships
+            <div style={{ display: "flex", justifyContent: "center", gap: 14, marginTop: 24, flexWrap: "wrap" }}>
+              <button
+                onClick={proceedToEligibility}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "14px 32px",
+                  background: "linear-gradient(135deg,#2563eb,#1d4ed8)",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "50px",
+                  fontWeight: 800,
+                  fontSize: 14,
+                  cursor: "pointer",
+                  boxShadow: "0 8px 20px rgba(37,99,235,0.35)",
+                }}
+              >
+                <I.Target /> Continue to Eligibility Check <I.Next />
               </button>
-              <button onClick={() => nav("/readiness")} style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 24px", background: "#fff", color: "#6d28d9", border: "1.5px solid #ddd6fe", borderRadius: "50px", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>
+              <button
+                onClick={() => nav("/readiness")}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "14px 24px",
+                  background: "#fff",
+                  color: "#6d28d9",
+                  border: "1.5px solid #ddd6fe",
+                  borderRadius: "50px",
+                  fontWeight: 800,
+                  fontSize: 14,
+                  cursor: "pointer",
+                }}
+              >
                 <I.Fix /> Fix Document Issues Guidance
               </button>
             </div>
+          </div>
+        )}
+
+        {/* ══════════════════ STEP 4 ══════════════════ */}
+        {step === 4 && (
+          <div>
+            <div className="nsp-profile-strip" style={{ marginBottom: 16 }}>
+              <div>
+                <div className="ps-name">Step 4: Scholarship Eligibility &amp; Matching</div>
+                <div className="ps-info">
+                  {aadharName || ds.ms10?.data?.extracted?.name || ds.community?.data?.extracted?.name || "Student"} | {studentCategory || ds.community?.data?.extracted?.communityCategory || "Category"}
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8, marginLeft: "auto", flexWrap: "wrap" }}>
+                <button
+                  className="btn-ghost-sm"
+                  onClick={() => {
+                    setStep(3);
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }}
+                  style={{ display: "flex", alignItems: "center", gap: 5 }}
+                >
+                  <I.Back /> Back to Consistency Results
+                </button>
+              </div>
+            </div>
+
+            <EligibilityEngine
+              isEmbedded={true}
+              initialProfile={eligibilityData?.profile}
+              fieldMetadata={eligibilityData?.fieldMetadata}
+              conflictWarnings={eligibilityData?.conflictWarnings}
+              onBackToStep3={() => {
+                setStep(3);
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              }}
+            />
           </div>
         )}
       </main>

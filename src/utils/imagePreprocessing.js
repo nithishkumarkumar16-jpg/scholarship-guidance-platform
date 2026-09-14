@@ -165,7 +165,45 @@ export function preprocessCanvasForOCR(source, qualityAssessment = null, variant
   let finalGray = grayscale;
 
   // Variant handling
-  if (variant === "binarized") {
+  if (variant === "normalized" || variant === "norm") {
+    // PASS E: Adaptive background illumination normalization
+    // Eliminates uneven lighting, shadows, and horizontal/vertical gradients
+    const gridStep = 40;
+    const gridW = Math.max(2, Math.ceil(size.width / gridStep));
+    const gridH = Math.max(2, Math.ceil(size.height / gridStep));
+    const bgGrid = new Float32Array(gridW * gridH);
+
+    for (let gy = 0; gy < gridH; gy++) {
+      for (let gx = 0; gx < gridW; gx++) {
+        const startX = gx * gridStep;
+        const endX = Math.min(size.width, startX + gridStep);
+        const startY = gy * gridStep;
+        const endY = Math.min(size.height, startY + gridStep);
+        let sum = 0, count = 0;
+        for (let y = startY; y < endY; y += 4) {
+          const rowOff = y * size.width;
+          for (let x = startX; x < endX; x += 4) {
+            sum += grayscale[rowOff + x];
+            count++;
+          }
+        }
+        bgGrid[gy * gridW + gx] = count > 0 ? (sum / count) : 128;
+      }
+    }
+
+    const normalized = new Uint8Array(totalPixels);
+    for (let y = 0; y < size.height; y++) {
+      const gy = Math.min(gridH - 1, Math.floor(y / gridStep));
+      const rowOff = y * size.width;
+      for (let x = 0; x < size.width; x++) {
+        const gx = Math.min(gridW - 1, Math.floor(x / gridStep));
+        const bgVal = Math.max(15, bgGrid[gy * gridW + gx]);
+        const val = Math.min(255, Math.max(0, Math.round((grayscale[rowOff + x] / bgVal) * 200)));
+        normalized[rowOff + x] = val;
+      }
+    }
+    finalGray = normalized;
+  } else if (variant === "binarized") {
     // PASS D: High-contrast binarization via Otsu's thresholding
     const otsuThresh = computeOtsuThreshold(grayscale, totalPixels);
     const binarized = new Uint8Array(totalPixels);
@@ -230,6 +268,7 @@ export function enhanceLowQualityCanvas(source, qualityAssessment = null) {
  * 2. contrast / standard: Grayscale + normalized contrast
  * 3. sharpened: Unsharp mask sharpened
  * 4. binarized: Clean Otsu thresholded black-and-white
+ * 5. normalized: Illumination-normalized
  */
 export function getPreprocessingVariants(source, qualityAssessment = null) {
   return {
@@ -238,7 +277,104 @@ export function getPreprocessingVariants(source, qualityAssessment = null) {
     contrast: preprocessCanvasForOCR(source, qualityAssessment, "contrast"),
     sharpened: preprocessCanvasForOCR(source, qualityAssessment, "sharpened"),
     binarized: preprocessCanvasForOCR(source, qualityAssessment, "binarized"),
+    normalized: preprocessCanvasForOCR(source, qualityAssessment, "normalized"),
   };
 }
+
+/**
+ * Selects the most beneficial single-pass preprocessing profile for a given scan quality.
+ * Avoids aggressive thresholding on clean documents while aiding degraded ones.
+ */
+export function selectPreprocessingProfile(qualityAssessment) {
+  if (!qualityAssessment) return "contrast";
+  if (qualityAssessment.sharpnessScore < 60) return "sharpened";
+  if (qualityAssessment.avgBrightness < 60 || qualityAssessment.contrastScore < 50) return "contrast";
+  if (qualityAssessment.avgBrightness > 220) return "binarized";
+  return "contrast";
+}
+
+/**
+ * Rotates a canvas by 90, 180, or 270 degrees.
+ * 
+ * @param {HTMLCanvasElement} canvas
+ * @param {number} degrees 0, 90, 180, or 270
+ * @returns {HTMLCanvasElement}
+ */
+export function rotateCanvas(canvas, degrees) {
+  const normDeg = ((degrees % 360) + 360) % 360;
+  if (normDeg === 0 || !canvas) return canvas;
+
+  const target = document.createElement("canvas");
+
+  if (normDeg === 90 || normDeg === 270) {
+    target.width = canvas.height;
+    target.height = canvas.width;
+  } else {
+    target.width = canvas.width;
+    target.height = canvas.height;
+  }
+
+  try {
+    const ctx = target.getContext("2d");
+    if (ctx) {
+      ctx.translate(target.width / 2, target.height / 2);
+      ctx.rotate((normDeg * Math.PI) / 180);
+      ctx.drawImage(canvas, -canvas.width / 2, -canvas.height / 2);
+    }
+  } catch (e) {
+    // jsdom fallback
+  }
+
+  return target;
+}
+
+/**
+ * Corrects small skew angles (-10° to +10°) without clipping document borders.
+ * 
+ * @param {HTMLCanvasElement} canvas
+ * @param {number} angleDegrees Skew angle in degrees
+ * @returns {HTMLCanvasElement}
+ */
+export function deskewCanvas(canvas, angleDegrees) {
+  if (!canvas || !angleDegrees || Math.abs(angleDegrees) < 0.2) return canvas;
+
+  const clampedAngle = Math.max(-10, Math.min(10, angleDegrees));
+  const rad = (clampedAngle * Math.PI) / 180;
+
+  const target = document.createElement("canvas");
+  target.width = canvas.width;
+  target.height = canvas.height;
+
+  try {
+    const ctx = target.getContext("2d");
+    if (ctx) {
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, target.width, target.height);
+      ctx.translate(target.width / 2, target.height / 2);
+      ctx.rotate(rad);
+      ctx.drawImage(canvas, -canvas.width / 2, -canvas.height / 2);
+    }
+  } catch (e) {
+    // jsdom fallback
+  }
+
+  return target;
+}
+
+/**
+ * Frees canvas memory by clearing dimensions and buffer.
+ * 
+ * @param {HTMLCanvasElement} canvas
+ */
+export function cleanupCanvas(canvas) {
+  if (!canvas) return;
+  try {
+    canvas.width = 0;
+    canvas.height = 0;
+  } catch (e) {
+    // Memory cleanup safeguard
+  }
+}
+
 
 

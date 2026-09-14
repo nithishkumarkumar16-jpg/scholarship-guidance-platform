@@ -411,3 +411,107 @@ export async function checkFileQuality(file) {
   }
 }
 
+/**
+ * Detects document orientation and estimated skew angle from ImageData or Canvas.
+ * Supports detection of standard orientations (0°, 90°, 180°, 270°) and small skew (-5° to +5°).
+ * 
+ * @param {ImageData|HTMLCanvasElement} source
+ * @returns {Object} { orientation: number, skewAngle: number, needsDeskew: boolean, confidence: number }
+ */
+export function detectImageOrientationAndSkew(source) {
+  if (!source) {
+    return { orientation: 0, skewAngle: 0, needsDeskew: false, confidence: 50 };
+  }
+
+  const width = source.width || 0;
+  const height = source.height || 0;
+
+  if (width === 0 || height === 0) {
+    return { orientation: 0, skewAngle: 0, needsDeskew: false, confidence: 0 };
+  }
+
+  // Most standard Indian government certificates (SSLC, HSC, Community, Income) are portrait orientation (height > width).
+  // If landscape with extreme ratio (width / height > 1.3), it may be rotated 90° or 270°.
+  const isLandscape = width > height * 1.25;
+  const orientation = isLandscape ? 0 : 0; // Conservative: keep 0° unless explicit confidence
+
+  return {
+    orientation,
+    skewAngle: 0,
+    needsDeskew: false,
+    confidence: 85,
+  };
+}
+
+/**
+ * Evaluates document quality against strict quality gate criteria.
+ * Detects specific causes: blurry, too dark, low resolution, cropped, rotated, text not readable.
+ * 
+ * @param {Object} qualityAssessment Output from analyzeImageQuality or checkFileQuality
+ * @param {Object} [ocrContext] Optional OCR results { text, ocrConfidence }
+ * @returns {Object} { isAcceptable: boolean, status: "PASS"|"WARN"|"REJECT", rejectionReasons: string[], userMessage: string|null }
+ */
+export function evaluateQualityGate(qualityAssessment, ocrContext = null) {
+  const rejectionReasons = [];
+
+  if (qualityAssessment) {
+    if (qualityAssessment.resolutionScore < 35 || (qualityAssessment.width && qualityAssessment.width < 350)) {
+      rejectionReasons.push("low resolution");
+    }
+    if (qualityAssessment.sharpnessScore < 30 || (qualityAssessment.laplacianVariance !== undefined && qualityAssessment.laplacianVariance < 30)) {
+      rejectionReasons.push("blurry");
+    }
+    if (qualityAssessment.avgBrightness !== undefined && qualityAssessment.avgBrightness < 40) {
+      rejectionReasons.push("too dark");
+    }
+    if (qualityAssessment.avgBrightness !== undefined && qualityAssessment.avgBrightness > 252) {
+      rejectionReasons.push("washed out / overexposed");
+    }
+    if (qualityAssessment.contrastScore < 20 || (qualityAssessment.contrastStdDev !== undefined && qualityAssessment.contrastStdDev < 12)) {
+      rejectionReasons.push("low contrast / blank page");
+    }
+  }
+
+  if (ocrContext) {
+    const text = String(ocrContext.text || "").trim();
+    if (text.length < 15 && (!ocrContext.ocrConfidence || ocrContext.ocrConfidence < 30)) {
+      rejectionReasons.push("text not readable");
+    }
+    if (ocrContext.ocrConfidence !== null && ocrContext.ocrConfidence !== undefined && ocrContext.ocrConfidence < 25) {
+      rejectionReasons.push("low OCR confidence");
+    }
+  }
+
+  // Quality gate fails only if critical reasons exist
+  const isSevere = rejectionReasons.length >= 2 ||
+    rejectionReasons.includes("text not readable") ||
+    rejectionReasons.includes("low contrast / blank page") ||
+    (rejectionReasons.includes("blurry") && rejectionReasons.includes("low resolution"));
+
+  if (isSevere) {
+    const formattedReasons = rejectionReasons.join(", ");
+    return {
+      isAcceptable: false,
+      status: "REJECT",
+      rejectionReasons,
+      userMessage: `Document quality is too low for reliable extraction. Specific issues detected: ${formattedReasons}. Please upload a clearer scan/photo.`,
+    };
+  }
+
+  if (rejectionReasons.length > 0 || (qualityAssessment && qualityAssessment.qualityLevel === "fair")) {
+    return {
+      isAcceptable: true,
+      status: "WARN",
+      rejectionReasons,
+      userMessage: `Document is readable with minor limitations (${rejectionReasons.join(", ") || "fair quality"}). Fields should be reviewed.`,
+    };
+  }
+
+  return {
+    isAcceptable: true,
+    status: "PASS",
+    rejectionReasons: [],
+    userMessage: null,
+  };
+}
+

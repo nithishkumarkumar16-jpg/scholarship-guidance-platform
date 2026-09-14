@@ -1,5 +1,6 @@
 import {
   detectDocumentType,
+  detectDocumentTitle,
   validateDocumentSlot,
   detectState,
   detectIssuingAuthority,
@@ -135,6 +136,66 @@ describe("documentClassifier", () => {
       const slotRes = validateDocumentSlot("income", detection);
       expect(slotRes.status).toBe("unconfident");
       expect(slotRes.badgeColor).toBe("yellow");
+    });
+  });
+
+  describe("detectDocumentTitle", () => {
+    test("detects 10th SSLC marksheet title with high confidence", () => {
+      const text = "SECONDARY SCHOOL LEAVING CERTIFICATE (SSLC)\nGOVERNMENT OF TAMIL NADU";
+      const res = detectDocumentTitle(text);
+      expect(res.documentType).toBe("ms10");
+      expect(res.documentTitle).toContain("Secondary School Leaving Certificate");
+      expect(res.confidence).toBeGreaterThanOrEqual(90);
+      expect(res.isIdentified).toBe(true);
+    });
+
+    test("detects 12th HSC marksheet title with high confidence", () => {
+      const text = "HIGHER SECONDARY COURSE CERTIFICATE (HSC)\nSTATEMENT OF MARKS";
+      const res = detectDocumentTitle(text);
+      expect(res.documentType).toBe("ms12");
+      expect(res.documentTitle).toContain("Higher Secondary Mark Sheet");
+      expect(res.confidence).toBeGreaterThanOrEqual(90);
+      expect(res.isIdentified).toBe(true);
+    });
+
+    test("detects Community Certificate title", () => {
+      const text = "COMMUNITY CERTIFICATE\nREVENUE DEPARTMENT";
+      const res = detectDocumentTitle(text);
+      expect(res.documentType).toBe("community");
+      expect(res.documentTitle).toBe("Community Certificate");
+      expect(res.confidence).toBeGreaterThanOrEqual(90);
+    });
+
+    test("detects Income Certificate title", () => {
+      const text = "INCOME CERTIFICATE\nTALUK OFFICE";
+      const res = detectDocumentTitle(text);
+      expect(res.documentType).toBe("income");
+      expect(res.documentTitle).toBe("Income Certificate");
+      expect(res.confidence).toBeGreaterThanOrEqual(90);
+    });
+
+    test("detects Transfer and Bonafide Certificates", () => {
+      const tc = detectDocumentTitle("TRANSFER CERTIFICATE\nSCHOOL EDUCATION");
+      expect(tc.documentTitle).toBe("Transfer Certificate");
+
+      const bona = detectDocumentTitle("BONAFIDE CERTIFICATE\nCOLLEGE OF ENGINEERING");
+      expect(bona.documentTitle).toBe("Bonafide Certificate");
+    });
+
+    test("handles OCR noise in document headers (e.g. SEC0NDARY SCH00L LEAV1NG CERT1F1CATE)", () => {
+      const noisyText = "SEC0NDARY SCH00L LEAV1NG CERT1F1CATE\nTAMIL NADU";
+      const res = detectDocumentTitle(noisyText);
+      expect(res.documentType).toBe("ms10");
+      expect(res.documentTitle).toContain("Secondary School Leaving Certificate");
+      expect(res.confidence).toBeGreaterThanOrEqual(80);
+    });
+
+    test("returns uncertain status for partial anchors", () => {
+      const partialText = "This receipt mentions annual income of the family.";
+      const res = detectDocumentTitle(partialText);
+      expect(res.documentTitle).toBe("Possible Income Certificate");
+      expect(res.confidence).toBe(61);
+      expect(res.isIdentified).toBe(false);
     });
   });
 });

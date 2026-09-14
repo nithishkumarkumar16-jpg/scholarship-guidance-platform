@@ -9,6 +9,7 @@ import EligibilityEngine from "./components/EligibilityEngine/EligibilityEngine"
 import RenewalAlert from "./components/RenewalAlert/RenewalAlert";
 import Reports from "./components/Reports/Reports";
 import ScholarshipChat from "./components/ScholarshipChat/ScholarshipChat";
+import NSPReadiness from "./components/NSPReadiness/NSPReadiness";
 import "./App.css";
 
 function App() {
@@ -25,6 +26,7 @@ function App() {
         <Route path="/eligibility" element={<EligibilityEngine />} />
         <Route path="/renewal" element={<RenewalAlert />} />
         <Route path="/reports" element={<Reports />} />
+        <Route path="/nsp" element={<NSPReadiness />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
       <ScholarshipChat />

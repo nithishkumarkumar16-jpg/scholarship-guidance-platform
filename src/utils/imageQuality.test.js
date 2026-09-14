@@ -3,7 +3,27 @@ import {
   analyzeCanvasQuality,
   calculateLaplacianVariance,
   getLuminance,
+  evaluateQualityGate,
+  detectImageOrientationAndSkew,
 } from "./imageQuality";
+import {
+  selectPreprocessingProfile,
+  cleanupCanvas,
+} from "./imagePreprocessing";
+
+beforeAll(() => {
+  if (typeof HTMLCanvasElement !== "undefined") {
+    HTMLCanvasElement.prototype.getContext = jest.fn(() => ({
+      fillRect: jest.fn(),
+      clearRect: jest.fn(),
+      getImageData: jest.fn(() => ({ width: 100, height: 100, data: new Uint8ClampedArray(40000) })),
+      putImageData: jest.fn(),
+      drawImage: jest.fn(),
+      translate: jest.fn(),
+      rotate: jest.fn(),
+    }));
+  }
+});
 
 describe("imageQuality", () => {
   test("computes correct luminance from RGB values", () => {
@@ -88,4 +108,77 @@ describe("imageQuality", () => {
     expect(result.qualityLevel).toBe("unknown");
     expect(result.issues.length).toBeGreaterThan(0);
   });
+
+  describe("evaluateQualityGate", () => {
+    test("passes clean, high-quality document", () => {
+      const goodAssessment = {
+        qualityLevel: "good",
+        resolutionScore: 95,
+        sharpnessScore: 90,
+        contrastScore: 90,
+        avgBrightness: 200,
+        laplacianVariance: 150,
+      };
+      const gate = evaluateQualityGate(goodAssessment, { text: "SECONDARY SCHOOL LEAVING CERTIFICATE", ocrConfidence: 92 });
+      expect(gate.isAcceptable).toBe(true);
+      expect(gate.status).toBe("PASS");
+      expect(gate.rejectionReasons.length).toBe(0);
+    });
+
+    test("rejects severely blurry and low-resolution image with specific rejection reasons", () => {
+      const poorAssessment = {
+        qualityLevel: "poor",
+        resolutionScore: 25,
+        width: 300,
+        sharpnessScore: 20,
+        laplacianVariance: 15,
+        contrastScore: 40,
+      };
+      const gate = evaluateQualityGate(poorAssessment);
+      expect(gate.isAcceptable).toBe(false);
+      expect(gate.status).toBe("REJECT");
+      expect(gate.rejectionReasons).toContain("low resolution");
+      expect(gate.rejectionReasons).toContain("blurry");
+      expect(gate.userMessage).toContain("Document quality is too low for reliable extraction");
+    });
+
+    test("rejects document when OCR text is unreadable / empty", () => {
+      const fairAssessment = {
+        qualityLevel: "fair",
+        resolutionScore: 70,
+        sharpnessScore: 65,
+      };
+      const gate = evaluateQualityGate(fairAssessment, { text: "", ocrConfidence: 10 });
+      expect(gate.isAcceptable).toBe(false);
+      expect(gate.status).toBe("REJECT");
+      expect(gate.rejectionReasons).toContain("text not readable");
+    });
+  });
+
+  describe("detectImageOrientationAndSkew", () => {
+    test("returns default portrait orientation for standard aspect ratio", () => {
+      const mockCanvas = { width: 800, height: 1200 };
+      const res = detectImageOrientationAndSkew(mockCanvas);
+      expect(res.orientation).toBe(0);
+      expect(res.needsDeskew).toBe(false);
+    });
+  });
+
+  describe("selectPreprocessingProfile and cleanupCanvas", () => {
+    test("selects sharpened profile for blurry images and contrast for dark images", () => {
+      expect(selectPreprocessingProfile({ sharpnessScore: 40 })).toBe("sharpened");
+      expect(selectPreprocessingProfile({ avgBrightness: 50, contrastScore: 40 })).toBe("contrast");
+      expect(selectPreprocessingProfile({ avgBrightness: 240 })).toBe("binarized");
+    });
+
+    test("cleanupCanvas resets canvas dimensions safely", () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 100;
+      canvas.height = 100;
+      cleanupCanvas(canvas);
+      expect(canvas.width).toBe(0);
+      expect(canvas.height).toBe(0);
+    });
+  });
 });
+

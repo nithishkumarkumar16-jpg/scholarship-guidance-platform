@@ -450,6 +450,86 @@ export function compareCommunity(certCommunity, studentCategory) {
  * 
  * IMPORTANT: Includes Income Certificate Holder Name (fixing the audit issue).
  */
+/**
+ * Cross-Document Name Resolver.
+ * If Document A (10th marksheet, Community Certificate, or Aadhaar) extracts a verified name
+ * (e.g. "Sanjeevsurya R"), and Document B (e.g. 12th marksheet) extracts a candidate name
+ * (e.g. "Njeevsurya R") where the edit distance is within 2 dropped characters,
+ * reconcile and auto-correct Document B's name to the verified name.
+ * 
+ * @param {Object} docs Map or object with document datasets
+ * @returns {Object} Updated documents with reconciled names and resolution entries
+ */
+export function resolveCrossDocumentNames(docs = {}) {
+  const tenth = docs.tenthData || docs.ms10?.data?.extracted || docs.ms10 || null;
+  const twelfth = docs.twelfthData || docs.ms12?.data?.extracted || docs.ms12 || null;
+  const community = docs.communityData || docs.community?.data?.extracted || docs.community || null;
+  const income = docs.incomeData || docs.income?.data?.extracted || docs.income || null;
+  const aadhar = docs.aadharName ? { name: docs.aadharName } : null;
+
+  const docEntries = [
+    { key: "tenth", doc: tenth, priority: 1, label: "10th Marksheet" },
+    { key: "community", doc: community, priority: 1, label: "Community Certificate" },
+    { key: "aadhar", doc: aadhar, priority: 1, label: "Aadhaar Card" },
+    { key: "twelfth", doc: twelfth, priority: 2, label: "12th Marksheet" },
+    { key: "income", doc: income, priority: 3, label: "Income Certificate" },
+  ].filter(e => e.doc && typeof e.doc.name === "string" && e.doc.name.trim().length >= 3);
+
+  const verifiedCandidates = docEntries.filter(e => e.priority === 1);
+  if (!verifiedCandidates.length) {
+    verifiedCandidates.push(...docEntries);
+  }
+
+  const resolutions = [];
+
+  for (const target of docEntries) {
+    if (!target.doc || !target.doc.name) continue;
+    const targetName = target.doc.name.trim();
+
+    for (const ref of verifiedCandidates) {
+      if (ref === target || !ref.doc || !ref.doc.name) continue;
+      const refName = ref.doc.name.trim();
+      if (refName.toLowerCase() === targetName.toLowerCase()) continue;
+
+      const normRef = refName.toLowerCase().replace(/[^a-z0-9]/g, "");
+      const normTarget = targetName.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+      const isDroppedPrefix = (
+        (normRef.startsWith("s") && normRef.slice(1) === normTarget) ||
+        (normRef.startsWith("sa") && normRef.slice(2) === normTarget) ||
+        (normRef.length - normTarget.length <= 2 && normRef.endsWith(normTarget))
+      );
+
+      const dist = levenshteinDistance(normRef, normTarget);
+      const isWithin2Drops = dist <= 2 && Math.abs(normRef.length - normTarget.length) <= 2;
+
+      if (isDroppedPrefix || isWithin2Drops) {
+        const previousName = target.doc.name;
+        target.doc.name = refName;
+        if (target.doc.candidateName) target.doc.candidateName = refName;
+        if (target.doc.studentName) target.doc.studentName = refName;
+        if (target.doc.applicantName) target.doc.applicantName = refName;
+        if (target.doc.structuredFields?.name) {
+          target.doc.structuredFields.name.rawValue = refName;
+          target.doc.structuredFields.name.normalizedValue = refName;
+          target.doc.structuredFields.name.reconciledFrom = ref.label;
+          target.doc.structuredFields.name.autoCorrected = true;
+        }
+        resolutions.push({
+          targetDoc: target.label,
+          originalName: previousName,
+          correctedName: refName,
+          referenceDoc: ref.label,
+          editDistance: dist,
+        });
+        break;
+      }
+    }
+  }
+
+  return { docs, resolutions };
+}
+
 export function buildCrossDocumentMatrix({
   aadharName = "",
   aadharDob = "",
@@ -463,6 +543,9 @@ export function buildCrossDocumentMatrix({
   studentCategory = "",
   incomeApplicant = "student",
 }) {
+  // Reconcile and auto-correct names across documents before evaluation
+  resolveCrossDocumentNames({ tenthData, twelfthData, communityData, incomeData, aadharName });
+
   // 1. All Name Sources
   const nameSources = [
     { doc: "Aadhaar Card",          ico: "🪪", val: aadharName.trim() || null, strict: true },

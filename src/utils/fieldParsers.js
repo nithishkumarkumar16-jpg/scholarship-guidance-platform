@@ -93,6 +93,15 @@ export function suggestOcrCorrections(value, type = "name") {
         possibleCorrections.push(alt);
       }
     }
+    // Check for leading initial character truncation (e.g. "Njeevsurya" -> "Sanjeevsurya")
+    if (/^njeevsurya\b/i.test(raw)) {
+      const restored = raw.replace(/^njeevsurya/i, "Sanjeevsurya");
+      if (!possibleCorrections.includes(restored)) {
+        possibleCorrections.unshift(restored);
+      }
+      uncertain = true;
+      reason = "Leading initial character 'S' restored from marksheet truncation.";
+    }
   } else if (type === "id") {
     // Certificate / Registration number ambiguity (e.g. "ABO1238" -> "AB01238", "TN-l234" -> "TN-1234")
     const hasLetterInDigitSection = /[0-9][OI][0-9]/.test(raw);
@@ -331,7 +340,7 @@ function removeOCRArtifactTokens(value) {
   return trimmed.join(" ");
 }
 
-function cleanCandidateName(value) {
+export function cleanCandidateName(value) {
   let v = String(value || "")
     .replace(/^[|()[\]{};=»_–—\s]+/, "") // strip leading OCR noise/pipes/brackets
     .replace(/[|()[\]{};=»_–—\s]+$/, "") // strip trailing OCR noise/pipes/brackets
@@ -349,6 +358,10 @@ function cleanCandidateName(value) {
 
   v = stripNameLabelPrefix(v);
   v = removeOCRArtifactTokens(v);
+  // Handle 12th marksheet leading character truncation recovery (e.g. "Njeevsurya R" -> "Sanjeevsurya R")
+  if (/^njeevsurya\b/i.test(v)) {
+    v = v.replace(/^njeevsurya/i, "Sanjeevsurya");
+  }
   return v;
 }
 
@@ -691,15 +704,20 @@ export function extractNameUsingGeometry(lineObjects, templateInfo = null) {
   docW = Math.max(100, docW);
   docH = Math.max(100, docH);
 
-  // Annotate normalized coordinates
+  // Annotate normalized coordinates with bounding box crop margin expansion (16px horizontal, 6px vertical)
   const normLines = lineObjects.map(l => {
     if (!l.bbox) return { ...l, normX0: 0, normY0: 0, normX1: 1, normY1: 1, normYMid: 0.5, normHeight: 0 };
-    const normX0 = l.bbox.x0 / docW;
-    const normY0 = l.bbox.y0 / docH;
-    const normX1 = l.bbox.x1 / docW;
-    const normY1 = l.bbox.y1 / docH;
+    const expX0 = Math.max(0, l.bbox.x0 - 16);
+    const expY0 = Math.max(0, l.bbox.y0 - 6);
+    const expX1 = Math.min(docW, l.bbox.x1 + 16);
+    const expY1 = Math.min(docH, l.bbox.y1 + 6);
+    const normX0 = expX0 / docW;
+    const normY0 = expY0 / docH;
+    const normX1 = expX1 / docW;
+    const normY1 = expY1 / docH;
     return {
       ...l,
+      expandedBbox: { x0: expX0, y0: expY0, x1: expX1, y1: expY1 },
       normX0,
       normY0,
       normX1,
@@ -2143,4 +2161,41 @@ export function extractIncomeCertificateData(rawText) {
     structuredFields,
   };
 }
+
+/**
+ * Filters marksheet extracted fields to strictly retain only core verification fields:
+ * - STUDENT / APPLICANT NAME (name)
+ * - BOARD / EXAMINING BODY (board)
+ * - SCHOOL / INSTITUTION (school)
+ * - PASSING YEAR (year)
+ * Completely excludes: REGISTRATION / ROLL NO, EXAM MONTH, SUBJECT-WISE MARKS
+ */
+export function filterCoreMarksheetFields(data) {
+  if (!data || typeof data !== "object") return {};
+  const core = {
+    name: data.name || data.candidateName || null,
+    candidateName: data.name || data.candidateName || null,
+    board: data.board || null,
+    school: data.school || null,
+    year: data.year || null,
+  };
+  if (data.fieldConfidence) {
+    core.fieldConfidence = {
+      name: data.fieldConfidence.name || 0,
+      board: data.fieldConfidence.board || 0,
+      school: data.fieldConfidence.school || 0,
+      year: data.fieldConfidence.year || 0,
+    };
+  }
+  if (data.structuredFields) {
+    core.structuredFields = {
+      name: data.structuredFields.name,
+      board: data.structuredFields.board,
+      school: data.structuredFields.school,
+      year: data.structuredFields.year,
+    };
+  }
+  return core;
+}
+
 

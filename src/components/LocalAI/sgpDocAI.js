@@ -18,7 +18,6 @@ import {
   extractMarksheetData,
   extractCommunityCertificateData,
   extractIncomeCertificateData,
-  filterCoreMarksheetFields,
 } from "../../utils/fieldParsers";
 
 export { detectDocumentType, validateDocumentSlot };
@@ -64,8 +63,7 @@ export function getLocalTesseractOptions() {
  * Renders up to 3 PDF pages locally using PDF.js and measures real canvas quality.
  */
 /**
- * Renders page 1 of PDF locally using PDF.js at optimal DPI (200-250 DPI equivalent, scale 2.1).
- * Avoids multi-page bloat and 300+ DPI full-canvas overhead to accelerate processing speed.
+ * Renders up to 3 PDF pages locally using PDF.js at crisp high resolution (300 DPI equivalent).
  */
 async function renderPDFPages(file) {
   const data = await file.arrayBuffer();
@@ -80,13 +78,12 @@ async function renderPDFPages(file) {
         `PDF exceeds the maximum allowed limit of ${MAX_PDF_PAGES} pages (found ${pdf.numPages} pages). Please upload a document with ${MAX_PDF_PAGES} or fewer pages.`
       );
     }
-    // Speed optimization: rasterize ONLY page 1 at optimal DPI (scale 2.1 = 200-250 DPI)
-    if (pdf.numPages >= 1) {
+    for (let n = 1; n <= pdf.numPages; n++) {
       try {
-        const page = await pdf.getPage(1);
-        const base = page.getViewport({ scale: 2.1 });
+        const page = await pdf.getPage(n);
+        const base = page.getViewport({ scale: 2.8 });
         const size = fitOCRCanvas(base.width, base.height);
-        const viewport = page.getViewport({ scale: (size.width / base.width) * 2.1 });
+        const viewport = page.getViewport({ scale: (size.width / base.width) * 2.8 });
         const canvas = document.createElement("canvas");
         canvas.width = Math.round(viewport.width);
         canvas.height = Math.round(viewport.height);
@@ -94,7 +91,7 @@ async function renderPDFPages(file) {
         await page.render({ canvasContext: ctx, viewport }).promise;
         pages.push(canvas);
       } catch (pageError) {
-        console.warn("PDF page 1 render failed", pageError);
+        console.warn("PDF page render failed; continuing with remaining pages", pageError);
       }
     }
     if (!pages.length) {
@@ -161,9 +158,7 @@ async function prepareRawImage(file) {
  * - multi-pass binarized variant for marksheets to eliminate security patterns
  */
 export async function runOCR(file, onProgress, qualityAssessment = null, isMarksheet = false) {
-  const localOpts = getLocalTesseractOptions();
   const worker = await createWorker("eng", 1, {
-    ...localOpts,
     logger: (m) => {
       if (m.status === "recognizing text" && onProgress) {
         onProgress(Math.round(m.progress * 100));
@@ -460,6 +455,11 @@ function validateExtractedDocument(type, data) {
   if (type === "ms10" || type === "ms12") {
     if (!data.name) warnings.push("Candidate name could not be reliably extracted. Please verify manually.");
     if (!data.board) warnings.push("Board name not clearly visible on marksheet.");
+    if (!data.marksScored) warnings.push("Total marks not detected — check scan quality.");
+    if (data.percentage) {
+      const pct = parseFloat(data.percentage);
+      if (pct < 35) issues.push(`Low percentage (${data.percentage}) — below standard pass criteria.`);
+    }
     if (!data.year) warnings.push("Year of passing not detected.");
   }
 
@@ -581,10 +581,7 @@ export async function extractDocumentData(file, slotType, onProgress) {
     } else if (ocrResult.multiPass) {
       passResults.push(extractMarksheetData(ocrResult.multiPass, type));
     }
-    const reconciled = reconcileMarksheetPasses(...passResults);
-    // Exclude unwanted fields: REGISTRATION / ROLL NO, EXAM MONTH, SUBJECT-WISE MARKS
-    // Keep only core verification fields: STUDENT / APPLICANT NAME, BOARD / EXAMINING BODY, SCHOOL / INSTITUTION, PASSING YEAR
-    extracted = filterCoreMarksheetFields(reconciled);
+    extracted = reconcileMarksheetPasses(...passResults);
   } else if (type === "community") {
     const pass1Data = extractCommunityCertificateData(rawText);
     const passResults = [pass1Data];
@@ -679,7 +676,7 @@ export async function extractDocumentData(file, slotType, onProgress) {
     rawText,
     isValid: issues.length === 0,
     documentTypeValid: slotValidation.status !== "mismatch",
-    fieldsIncomplete: (type === "ms10" || type === "ms12") && (!extracted.name || !extracted.year || !extracted.board),
+    fieldsIncomplete: (type === "ms10" || type === "ms12") && (!extracted.name || !extracted.marksScored || !extracted.year),
   };
 }
 

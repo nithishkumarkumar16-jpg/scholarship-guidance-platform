@@ -7,7 +7,8 @@ jest.mock("tesseract.js", () => ({
   createWorker: jest.fn(),
 }));
 
-import { extractMarksheetFields, reconcileMarksheetPasses, getPdfWorkerSrc, getLocalTesseractOptions, MAX_PDF_PAGES } from "./sgpDocAI";
+import { createWorker } from "tesseract.js";
+import { extractMarksheetFields, reconcileMarksheetPasses, getPdfWorkerSrc, getLocalTesseractOptions, MAX_PDF_PAGES, runOCR } from "./sgpDocAI";
 
 describe("extractMarksheetFields", () => {
   test("rejects boilerplate candidate labels and keeps the real student name", () => {
@@ -103,6 +104,33 @@ describe("pdf security & worker configuration", () => {
     expect(options.gzip).toBe(false);
     expect(options.cacheMethod).toBe("none");
     expect(JSON.stringify(options)).not.toMatch(/cdn|https?:/i);
+  });
+
+  test("runOCR initializes Tesseract with getLocalTesseractOptions for offline execution", async () => {
+    const mockWorker = {
+      recognize: jest.fn(),
+      terminate: jest.fn().mockResolvedValue(),
+    };
+    createWorker.mockResolvedValueOnce(mockWorker);
+
+    try {
+      await runOCR({ type: "image/png" });
+    } catch (e) {
+      // Ignore image decode errors in test environment
+    }
+
+    expect(createWorker).toHaveBeenCalledWith(
+      "eng",
+      1,
+      expect.objectContaining({
+        workerPath: "/tesseract/worker.min.js",
+        corePath: "/tesseract",
+        langPath: "/tessdata",
+        gzip: false,
+        cacheMethod: "none",
+        workerBlobURL: false,
+      })
+    );
   });
 });
 

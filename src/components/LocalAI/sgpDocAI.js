@@ -159,6 +159,7 @@ async function prepareRawImage(file) {
  */
 export async function runOCR(file, onProgress, qualityAssessment = null, isMarksheet = false) {
   const worker = await createWorker("eng", 1, {
+    ...getLocalTesseractOptions(),
     logger: (m) => {
       if (m.status === "recognizing text" && onProgress) {
         onProgress(Math.round(m.progress * 100));

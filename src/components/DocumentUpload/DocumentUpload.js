@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 import LanguageSelector from "../LanguageSelector/LanguageSelector";
 import "./DocumentUpload.css";
 import { extractDocumentData } from "../LocalAI/sgpDocAI";
-import { buildCrossDocumentMatrix, resolveCrossDocumentNames } from "../../utils/verificationEngine";
+import { buildCrossDocumentMatrix } from "../../utils/verificationEngine";
+import { SUPPORTED_DOC_TYPES } from "../../utils/documentClassifier";
 import EligibilityEngine from "../EligibilityEngine/EligibilityEngine";
 import { adaptDocumentsToEligibilityProfile } from "../../adapters/profileAdapter";
 
@@ -43,15 +44,34 @@ const DCFG = {
 export const DOC_FIELD_DEFINITIONS = {
   ms10: [
     { id: "name", label: "STUDENT / APPLICANT NAME", keys: ["name", "studentName", "applicantName", "candidateName"] },
+    { id: "fatherName", label: "PARENT / GUARDIAN NAME", keys: ["fatherName", "parentName", "guardianName", "motherName"] },
+    { id: "dob", label: "DATE OF BIRTH", keys: ["dob", "dateOfBirth"] },
     { id: "board", label: "BOARD / EXAMINING BODY", keys: ["board", "examiningBody"] },
     { id: "school", label: "SCHOOL / INSTITUTION", keys: ["school", "institution", "schoolName"] },
+    { id: "registerNumber", label: "REGISTRATION / ROLL NO", keys: ["registerNumber", "rollNumber", "regNo"] },
     { id: "year", label: "PASSING YEAR", keys: ["year", "passingYear"] },
+    { id: "month", label: "EXAM MONTH", keys: ["month", "examMonth"] },
+    { id: "subjectMarks", label: "SUBJECT-WISE MARKS", keys: ["subjectMarks", "subjectWiseMarks", "subjects"] },
+    { id: "marksScored", label: "MARKS SCORED", keys: ["marksScored", "obtainedMarks", "marks"] },
+    { id: "maxMarks", label: "MAXIMUM MARKS", keys: ["maxMarks", "totalMaxMarks"] },
+    { id: "percentage", label: "PERCENTAGE", keys: ["percentage"] },
+    { id: "grade", label: "GRADE / RESULT", keys: ["grade", "result"] },
   ],
   ms12: [
     { id: "name", label: "STUDENT / APPLICANT NAME", keys: ["name", "studentName", "applicantName", "candidateName"] },
+    { id: "fatherName", label: "PARENT / GUARDIAN NAME", keys: ["fatherName", "parentName", "guardianName", "motherName"] },
+    { id: "dob", label: "DATE OF BIRTH", keys: ["dob", "dateOfBirth"] },
     { id: "board", label: "BOARD / EXAMINING BODY", keys: ["board", "examiningBody"] },
     { id: "school", label: "SCHOOL / INSTITUTION", keys: ["school", "institution", "schoolName"] },
+    { id: "stream", label: "STREAM / GROUP", keys: ["stream", "group"] },
+    { id: "registerNumber", label: "REGISTRATION / ROLL NO", keys: ["registerNumber", "rollNumber", "regNo"] },
     { id: "year", label: "PASSING YEAR", keys: ["year", "passingYear"] },
+    { id: "month", label: "EXAM MONTH", keys: ["month", "examMonth"] },
+    { id: "subjectMarks", label: "SUBJECT-WISE MARKS", keys: ["subjectMarks", "subjectWiseMarks", "subjects"] },
+    { id: "marksScored", label: "MARKS SCORED", keys: ["marksScored", "obtainedMarks", "marks"] },
+    { id: "maxMarks", label: "MAXIMUM MARKS", keys: ["maxMarks", "totalMaxMarks"] },
+    { id: "percentage", label: "PERCENTAGE", keys: ["percentage"] },
+    { id: "grade", label: "GRADE / RESULT", keys: ["grade", "result"] },
   ],
   income: [
     { id: "name", label: "APPLICANT NAME", keys: ["name", "applicantName", "candidateName", "studentName"] },
@@ -257,9 +277,9 @@ function VerificationReport({ matrixData, aadharName, aadharDob, bankHolder, ban
       {/* Pre-Submission Consistency Score Banner */}
       <div style={{ background: "linear-gradient(135deg,#0f172a,#1e293b)", color: "white", borderRadius: "12px", padding: "18px 24px", marginBottom: "20px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "16px" }}>
         <div>
-          <div style={{ fontSize: "11px", fontWeight: 800, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "1px" }}>Pre-Submission Consistency Status</div>
-          <div style={{ fontSize: "24px", fontWeight: 900, color: consistencyPercentage >= 80 ? "#4ade80" : consistencyPercentage >= 60 ? "#facc15" : "#f87171", marginTop: "2px" }}>
-            {overallReadiness}
+          <div style={{ fontSize: "11px", fontWeight: 800, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "1px" }}>Pre-Submission Consistency Score</div>
+          <div style={{ fontSize: "28px", fontWeight: 900, color: consistencyPercentage >= 80 ? "#4ade80" : consistencyPercentage >= 60 ? "#facc15" : "#f87171", marginTop: "2px" }}>
+            {consistencyPercentage}% — {overallReadiness}
           </div>
           <div style={{ fontSize: "12px", color: "#cbd5e1", marginTop: "4px" }}>
             {scorePoints} of {maxPoints} verification points achieved across locally checked items.
@@ -422,18 +442,7 @@ export default function DocumentUpload({ initialDs = null, initialStep = 1 } = {
   const navigate = useNavigate();
   const [isExiting, setIsExiting] = useState(false);
   const [step, setStep] = useState(initialStep);
-  const [ds, setDs] = useState(() => {
-    const base = initialDs || initDS();
-    if (initialDs) {
-      resolveCrossDocumentNames({
-        tenthData: base.ms10?.data?.extracted,
-        twelfthData: base.ms12?.data?.extracted,
-        communityData: base.community?.data?.extracted,
-        incomeData: base.income?.data?.extracted,
-      });
-    }
-    return base;
-  });
+  const [ds, setDs] = useState(() => initialDs || initDS());
 
   const [aadharName, setAadharName] = useState("");
   const [aadharDob, setAadharDob] = useState("");
@@ -499,17 +508,7 @@ export default function DocumentUpload({ initialDs = null, initialStep = 1 } = {
         setQuotaType(localResult.extracted.quotaType);
       }
 
-      setDs(p => {
-        const nextDs = { ...p, [type]: { ...p[type], data: localResult, loading: false, open: true } };
-        resolveCrossDocumentNames({
-          tenthData: nextDs.ms10?.data?.extracted,
-          twelfthData: nextDs.ms12?.data?.extracted,
-          communityData: nextDs.community?.data?.extracted,
-          incomeData: nextDs.income?.data?.extracted,
-          aadharName,
-        });
-        return nextDs;
-      });
+      setDs(p => ({ ...p, [type]: { ...p[type], data: localResult, loading: false, open: true } }));
     } catch (e) {
       setDs(p => ({ ...p, [type]: { ...p[type], loading: false, err: e.message || "Analysis failed" } }));
     }
@@ -584,12 +583,22 @@ export default function DocumentUpload({ initialDs = null, initialStep = 1 } = {
     const fieldDefs = DOC_FIELD_DEFINITIONS[type] || [];
     const ext = s.data?.extracted || {};
     const slotVal = s.data?.slotValidation || {};
+    const quality = s.data?.quality || {};
+    const stateVal = s.data?.state || ext.state || null;
+    const authVal = s.data?.issuingAuthority || ext.issuingAuthority || null;
+    const ocrConfText = s.data?.ocrConfidence !== null && s.data?.ocrConfidence !== undefined
+      ? `${s.data.ocrConfidence}%`
+      : "Not available";
+    const qualityLvl = quality.qualityLevel ? quality.qualityLevel.toUpperCase() : "UNKNOWN";
+    const statusText = s.data?.issues?.length > 0
+      ? "Manual verification recommended"
+      : (s.data?.warnings?.length > 0 ? "Extracted with minor uncertainty" : "Extracted with high confidence");
 
     return (
       <div className={"ex-wrap-r ex-" + cfg.color}>
         <div className="ex-hd-r" onClick={() => toggleOpen(type)}>
           <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <I.Clipboard /> Extracted Details
+            <I.Clipboard /> Extracted Details &amp; Multi-State Audit
           </span>
           <span>{s.open ? <I.Up /> : <I.Down />}</span>
         </div>
@@ -613,10 +622,73 @@ export default function DocumentUpload({ initialDs = null, initialStep = 1 } = {
               </div>
             )}
 
+            {/* Quality, OCR Confidence & State-Agnostic Strip (Compact Standardized Metadata Grid) */}
+            <div className="doc-audit-metadata-grid">
+              <div className="metadata-item">
+                <span className="metadata-label">Document Type</span>
+                <span className="metadata-value">
+                  {s.data?.detectedType ? (SUPPORTED_DOC_TYPES[s.data.detectedType]?.label || s.data.detectedType) : cfg.label}
+                </span>
+              </div>
+              <div className="metadata-item">
+                <span className="metadata-label">State</span>
+                <span className="metadata-value" style={{ color: stateVal ? "#0369a1" : "#64748b" }}>
+                  {stateVal || "State not determined"}
+                </span>
+              </div>
+              <div className="metadata-item">
+                <span className="metadata-label">Authority</span>
+                <span className="metadata-value" style={{ color: authVal ? "#4338ca" : "#64748b" }}>
+                  {authVal || "Authority not determined"}
+                </span>
+              </div>
+              <div className="metadata-item">
+                <span className="metadata-label">Quality</span>
+                <span className="metadata-value" style={{ color: qualityLvl === "GOOD" ? "#16a34a" : qualityLvl === "FAIR" ? "#ca8a04" : qualityLvl === "POOR" ? "#dc2626" : "#64748b" }}>
+                  {qualityLvl}
+                </span>
+              </div>
+              <div className="metadata-item">
+                <span className="metadata-label">OCR Confidence</span>
+                <span className="metadata-value">
+                  {ocrConfText}
+                  {s.data?.fieldConfidence ? (
+                    <span style={{ fontWeight: 600, fontSize: 10, color: "#0284c7", marginLeft: 4 }}>
+                      (Field Match: {s.data.fieldConfidence}%)
+                    </span>
+                  ) : null}
+                </span>
+              </div>
+              <div className="metadata-item">
+                <span className="metadata-label">Status</span>
+                <span className="metadata-value" style={{ color: s.data?.issues?.length > 0 ? "#dc2626" : (s.data?.warnings?.length > 0 ? "#d97706" : "#16a34a") }}>
+                  {statusText}
+                </span>
+              </div>
+            </div>
+
+            {/* Quality Explanation */}
+            {quality.qualityDescription && (
+              <div style={{ fontSize: "10.5px", color: "#64748b", marginBottom: 8, fontStyle: "italic" }}>
+                ℹ️ {quality.qualityDescription}
+              </div>
+            )}
+
             {/* Warnings and Issues */}
             {s.data?.warnings?.length > 0 && (
               <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 6, padding: "6px 10px", marginBottom: 8, fontSize: 11, color: "#92400e" }}>
                 {s.data.warnings.map((w, wi) => <div key={wi}>⚠️ {w}</div>)}
+              </div>
+            )}
+
+            {/* Low OCR Confidence Warning (<65%) */}
+            {((s.data?.ocrConfidence !== null && s.data?.ocrConfidence !== undefined && s.data.ocrConfidence < 65) || (s.data?.fieldConfidence !== null && s.data?.fieldConfidence !== undefined && s.data.fieldConfidence < 65)) && (
+              <div className="blurry-scan-warning-banner" style={{ background: "#eff6ff", border: "1.5px solid #93c5fd", borderRadius: 8, padding: "10px 14px", marginBottom: 10, fontSize: 11.5, color: "#1e40af", display: "flex", alignItems: "flex-start", gap: 8 }}>
+                <span style={{ fontSize: 16, lineHeight: 1 }}>ℹ️</span>
+                <div>
+                  <strong style={{ display: "block", marginBottom: 2 }}>INFO: Blurry Scan Warning</strong>
+                  <span>OCR extraction confidence is below 65%. For optimal multi-document data consistency checking, please ensure clear, high-contrast, well-lit scans (300 DPI recommended). Pipeline will proceed using best-effort text extraction without crashing.</span>
+                </div>
               </div>
             )}
 
@@ -675,8 +747,8 @@ export default function DocumentUpload({ initialDs = null, initialStep = 1 } = {
                         {displayVal}
                       </div>
                       {typeof matchScore === "number" && matchScore > 0 ? (
-                        <span className="match-badge match-high">
-                          Matched
+                        <span className={`match-badge ${matchScore >= 85 ? "match-high" : "match-med"}`}>
+                          {matchScore}% match
                         </span>
                       ) : null}
                     </div>

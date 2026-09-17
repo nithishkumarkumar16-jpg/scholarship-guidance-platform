@@ -103,227 +103,10 @@ export function computeOtsuThreshold(grayscale, totalPixels) {
 }
 
 /**
- * Expands bounding box margins by padX (12-16px, default 16) horizontally
- * and padY (6px) vertically to ensure initial capital strokes and margins are not clipped.
- * 
- * @param {Object} bbox Bounding box with x0, y0, x1, y1 (or left, top, right, bottom)
- * @param {number} [padX=16] Horizontal padding expansion in pixels (12-16px)
- * @param {number} [padY=6] Vertical padding expansion in pixels (6px)
- * @param {number} [maxW=Infinity] Canvas boundary width
- * @param {number} [maxH=Infinity] Canvas boundary height
- * @returns {Object} Expanded bounding box { x0, y0, x1, y1, width, height }
- */
-export function expandBoundingBox(bbox, padX = 16, padY = 6, maxW = Infinity, maxH = Infinity) {
-  if (!bbox) return null;
-
-  let pX = 16;
-  let pY = 6;
-  let mW = Infinity;
-  let mH = Infinity;
-
-  if (typeof padX === "object" && padX !== null) {
-    pX = typeof padX.padX === "number" ? padX.padX : 16;
-    pY = typeof padX.padY === "number" ? padX.padY : 6;
-    mW = typeof padX.maxW === "number" ? padX.maxW : (typeof padX.width === "number" ? padX.width : Infinity);
-    mH = typeof padX.maxH === "number" ? padX.maxH : (typeof padX.height === "number" ? padX.height : Infinity);
-  } else if (typeof padX === "number" && typeof padY === "number" && maxW === Infinity && (padX > 50 || padY > 50)) {
-    // Called as expandBoundingBox(bbox, maxW, maxH)
-    mW = padX;
-    mH = padY;
-    pX = 16;
-    pY = 6;
-  } else {
-    pX = typeof padX === "number" ? padX : 16;
-    pY = typeof padY === "number" ? padY : 6;
-    mW = typeof maxW === "number" ? maxW : Infinity;
-    mH = typeof maxH === "number" ? maxH : Infinity;
-  }
-
-  let rawX0 = bbox.x0 !== undefined ? bbox.x0 : (bbox.x !== undefined ? bbox.x : (bbox.left !== undefined ? bbox.left : 0));
-  let rawY0 = bbox.y0 !== undefined ? bbox.y0 : (bbox.y !== undefined ? bbox.y : (bbox.top !== undefined ? bbox.top : 0));
-  let rawW = bbox.width !== undefined ? bbox.width : (bbox.w !== undefined ? bbox.w : 0);
-  let rawH = bbox.height !== undefined ? bbox.height : (bbox.h !== undefined ? bbox.h : 0);
-
-  // Normalized (0.0 - 1.0) coordinates conversion
-  if (rawX0 <= 1 && rawY0 <= 1 && rawW <= 1 && rawH <= 1 && mW !== Infinity && mH !== Infinity) {
-    rawX0 = rawX0 * mW;
-    rawY0 = rawY0 * mH;
-    rawW = rawW * mW;
-    rawH = rawH * mH;
-  }
-
-  let rawX1 = bbox.x1 !== undefined ? bbox.x1 : (bbox.right !== undefined ? bbox.right : (rawX0 + rawW));
-  let rawY1 = bbox.y1 !== undefined ? bbox.y1 : (bbox.bottom !== undefined ? bbox.bottom : (rawY0 + rawH));
-
-  const x0 = Math.max(0, rawX0 - pX);
-  const y0 = Math.max(0, rawY0 - pY);
-  const x1 = Math.min(mW, rawX1 + pX);
-  const y1 = Math.min(mH, rawY1 + pY);
-
-  const roundedX0 = Math.round(x0);
-  const roundedY0 = Math.round(y0);
-  const roundedX1 = Math.round(x1);
-  const roundedY1 = Math.round(y1);
-
-  return {
-    x0: roundedX0,
-    y0: roundedY0,
-    x1: roundedX1,
-    y1: roundedY1,
-    x: roundedX0,
-    y: roundedY0,
-    width: Math.max(1, Math.round(roundedX1 - roundedX0)),
-    height: Math.max(1, Math.round(roundedY1 - roundedY0)),
-  };
-}
-
-/**
- * Extracts a region of interest from canvas with expanded padding (12-16px horizontal, 6px vertical).
- * 
- * @param {HTMLCanvasElement} canvas Source canvas
- * @param {Object} bbox Target bounding box
- * @param {number} [padX=16] Horizontal expansion
- * @param {number} [padY=6] Vertical expansion
- * @returns {HTMLCanvasElement} Cropped canvas with preserved margins
- */
-export function cropCanvasBoundingBox(canvas, bbox, padX = 16, padY = 6) {
-  if (!canvas || !bbox) return canvas;
-  const exp = expandBoundingBox(bbox, padX, padY, canvas.width, canvas.height);
-  if (typeof document === "undefined" || !document.createElement) {
-    return { ...exp, canvas };
-  }
-
-  const cropCanvas = document.createElement("canvas");
-  cropCanvas.width = exp.width;
-  cropCanvas.height = exp.height;
-  const ctx = cropCanvas.getContext ? cropCanvas.getContext("2d", { willReadFrequently: true }) : null;
-  if (ctx && typeof ctx.drawImage === "function") {
-    ctx.drawImage(
-      canvas,
-      exp.x0, exp.y0, exp.width, exp.height,
-      0, 0, exp.width, exp.height
-    );
-  }
-  return cropCanvas;
-}
-
-/**
- * Sauvola local adaptive thresholding with edge-preserving contrast adjustment.
- * Prevents thin capital character stroke erosion (e.g., initial 'S' in marksheet names).
- * Formula: T(x, y) = m(x, y) * (1 + k * (s(x, y) / R - 1))
- * where m is local mean, s is standard deviation, R = 128, k = 0.2
- * 
- * Supports both grayscale Uint8Array and ImageData objects.
- * 
- * @param {Uint8Array|ImageData} grayscaleOrImageData Grayscale pixel array or ImageData
- * @param {number|Object} width Image width or options object when ImageData is provided
- * @param {number} [height] Image height
- * @param {number} [windowRadius=12] Half-window size
- * @param {number} [k=0.2] Sensitivity parameter (0.2 preserves thin letter strokes)
- * @returns {Uint8Array|ImageData} Binarized byte array or modified ImageData
- */
-export function applySauvolaThreshold(grayscaleOrImageData, width, height, windowRadius = 12, k = 0.2) {
-  let grayscale;
-  let isImageData = false;
-  let w = width;
-  let h = height;
-  let winRad = windowRadius;
-  let sensK = k;
-
-  if (grayscaleOrImageData && grayscaleOrImageData.data && grayscaleOrImageData.width) {
-    isImageData = true;
-    w = grayscaleOrImageData.width;
-    h = grayscaleOrImageData.height;
-    const rgba = grayscaleOrImageData.data;
-    const totalPixels = w * h;
-    grayscale = new Uint8Array(totalPixels);
-    for (let i = 0; i < totalPixels; i++) {
-      grayscale[i] = Math.round(0.299 * rgba[i * 4] + 0.587 * rgba[i * 4 + 1] + 0.114 * rgba[i * 4 + 2]);
-    }
-    if (typeof width === "object" && width !== null) {
-      winRad = width.windowRadius ?? (width.windowSize ? Math.max(3, Math.floor(width.windowSize / 2)) : 12);
-      sensK = width.k ?? 0.2;
-    }
-  } else {
-    grayscale = grayscaleOrImageData;
-  }
-
-  const total = w * h;
-  const output = new Uint8Array(total);
-
-  const integW = w + 1;
-  const integH = h + 1;
-  const integSize = integW * integH;
-  const I = new Float64Array(integSize);
-  const I2 = new Float64Array(integSize);
-
-  for (let y = 0; y < h; y++) {
-    const rowOff = y * w;
-    const integRowOff = (y + 1) * integW;
-    const prevIntegRowOff = y * integW;
-    let rowSum = 0;
-    let rowSumSq = 0;
-    for (let x = 0; x < w; x++) {
-      const val = grayscale[rowOff + x];
-      rowSum += val;
-      rowSumSq += val * val;
-      I[integRowOff + (x + 1)] = I[prevIntegRowOff + (x + 1)] + rowSum;
-      I2[integRowOff + (x + 1)] = I2[prevIntegRowOff + (x + 1)] + rowSumSq;
-    }
-  }
-
-  const R = 128;
-
-  for (let y = 0; y < h; y++) {
-    const y1 = Math.max(0, y - winRad);
-    const y2 = Math.min(h - 1, y + winRad);
-    const rowOff = y * w;
-
-    for (let x = 0; x < w; x++) {
-      const x1 = Math.max(0, x - winRad);
-      const x2 = Math.min(w - 1, x + winRad);
-
-      const count = (x2 - x1 + 1) * (y2 - y1 + 1);
-
-      const brIdx = (y2 + 1) * integW + (x2 + 1);
-      const blIdx = (y2 + 1) * integW + x1;
-      const trIdx = y1 * integW + (x2 + 1);
-      const tlIdx = y1 * integW + x1;
-
-      const sum = I[brIdx] - I[blIdx] - I[trIdx] + I[tlIdx];
-      const sumSq = I2[brIdx] - I2[blIdx] - I2[trIdx] + I2[tlIdx];
-
-      const mean = sum / count;
-      const variance = Math.max(0, (sumSq / count) - (mean * mean));
-      const std = Math.sqrt(variance);
-
-      const thresh = mean * (1 + sensK * ((std / R) - 1));
-      const pixelVal = grayscale[rowOff + x];
-
-      output[rowOff + x] = pixelVal < thresh ? 0 : 255;
-    }
-  }
-
-  if (isImageData) {
-    const rgba = grayscaleOrImageData.data;
-    for (let i = 0; i < total; i++) {
-      const v = output[i];
-      rgba[i * 4] = v;
-      rgba[i * 4 + 1] = v;
-      rgba[i * 4 + 2] = v;
-      rgba[i * 4 + 3] = 255;
-    }
-    return grayscaleOrImageData;
-  }
-
-  return output;
-}
-
-/**
  * Preprocesses an image or canvas for Tesseract.js OCR with selectable variant:
  * - "contrast" (Variant A/B: Grayscale + normalized contrast stretch)
  * - "sharpened" (Variant C: Grayscale + unsharp mask filter)
- * - "binarized" / "adaptive" (Variant D: Adaptive Sauvola thresholding to preserve initial capital strokes)
+ * - "binarized" (Variant D: Grayscale + Otsu thresholding for background pattern removal)
  * 
  * @param {HTMLCanvasElement|ImageBitmap} source
  * @param {Object} [qualityAssessment] Output from analyzeImageQuality
@@ -420,10 +203,14 @@ export function preprocessCanvasForOCR(source, qualityAssessment = null, variant
       }
     }
     finalGray = normalized;
-  } else if (variant === "binarized" || variant === "adaptive" || variant === "sauvola") {
-    // PASS D: Adaptive Sauvola thresholding with edge-preserving contrast adjustment
-    // Prevents thin capital character stroke erosion (e.g., initial 'S' in marksheet names)
-    finalGray = applySauvolaThreshold(grayscale, size.width, size.height, 12, 0.2);
+  } else if (variant === "binarized") {
+    // PASS D: High-contrast binarization via Otsu's thresholding
+    const otsuThresh = computeOtsuThreshold(grayscale, totalPixels);
+    const binarized = new Uint8Array(totalPixels);
+    for (let i = 0; i < totalPixels; i++) {
+      binarized[i] = grayscale[i] < otsuThresh ? 0 : 255;
+    }
+    finalGray = binarized;
   } else if (variant === "sharpened" || isBlurry) {
     // PASS C: 3x3 unsharp mask sharpening
     if (size.width >= 100 && size.height >= 100) {

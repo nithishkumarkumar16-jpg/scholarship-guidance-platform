@@ -5,7 +5,6 @@ import {
   compareCommunity,
   evaluateIncomeFreshness,
   buildCrossDocumentMatrix,
-  resolveCrossDocumentNames,
   levenshteinDistance,
 } from "./verificationEngine";
 
@@ -138,45 +137,6 @@ describe("verificationEngine", () => {
       expect(matrix.hasNameMismatch).toBe(true);
       expect(matrix.nameConsistencyStatus).toBe("red");
       expect(matrix.overallReadiness).toContain("Issues Found");
-    });
-  });
-
-  describe("Cross-Document Name Resolution", () => {
-    test("reconciles truncated name 'Njeevsurya R' to 'Sanjeevsurya R' using 10th marksheet reference", () => {
-      const tenthData = { name: "Sanjeevsurya R" };
-      const twelfthData = { name: "Njeevsurya R", candidateName: "Njeevsurya R" };
-      const { resolutions } = resolveCrossDocumentNames({ tenthData, twelfthData });
-
-      expect(twelfthData.name).toBe("Sanjeevsurya R");
-      expect(twelfthData.candidateName).toBe("Sanjeevsurya R");
-      expect(resolutions.length).toBe(1);
-      expect(resolutions[0].originalName).toBe("Njeevsurya R");
-      expect(resolutions[0].correctedName).toBe("Sanjeevsurya R");
-    });
-
-    test("reconciles truncated name from Aadhaar or Community Certificate reference", () => {
-      const twelfthData = {
-        name: "Njeevsurya R",
-        structuredFields: { name: { rawValue: "Njeevsurya R", normalizedValue: "Njeevsurya R" } },
-      };
-      const { resolutions } = resolveCrossDocumentNames({
-        aadharName: "Sanjeevsurya R",
-        twelfthData,
-      });
-
-      expect(twelfthData.name).toBe("Sanjeevsurya R");
-      expect(twelfthData.structuredFields.name.rawValue).toBe("Sanjeevsurya R");
-      expect(twelfthData.structuredFields.name.autoCorrected).toBe(true);
-      expect(resolutions.length).toBe(1);
-    });
-
-    test("does not modify names when difference is greater than 2 dropped characters", () => {
-      const tenthData = { name: "Sanjeevsurya R" };
-      const twelfthData = { name: "Ramesh Kumar" };
-      const { resolutions } = resolveCrossDocumentNames({ tenthData, twelfthData });
-
-      expect(twelfthData.name).toBe("Ramesh Kumar");
-      expect(resolutions.length).toBe(0);
     });
   });
 });
